@@ -23,9 +23,25 @@ struct DRINK_MORE_WATERApp: App {
         }
     }()
 
+    @State private var showSplash = true
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ZStack {
+                if showSplash {
+                    SplashView()
+                } else {
+                    ContentView()
+                }
+            }
+            .animation(.easeInOut(duration: 0.3), value: showSplash)
+            .task {
+                guard showSplash else { return }
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                withAnimation {
+                    showSplash = false
+                }
+            }
         }
         .modelContainer(sharedModelContainer)
     }

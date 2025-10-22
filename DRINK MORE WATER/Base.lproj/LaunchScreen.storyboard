@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="24128" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" colorMatched="YES" initialViewController="LaunchViewController">
+    <device id="retina6_9" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="24063"/>
+        <capability name="System colors in document resources" minToolsVersion="11.0"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <scenes>
+        <!--Launch Screen View Controller-->
+        <scene sceneID="LaunchScene">
+            <objects>
+                <viewController storyboardIdentifier="LaunchViewController" id="LaunchViewController" sceneMemberID="viewController">
+                    <layoutGuides>
+                        <viewControllerLayoutGuide type="top" id="Top"/>
+                        <viewControllerLayoutGuide type="bottom" id="Bottom"/>
+                    </layoutGuides>
+                    <view key="view" contentMode="scaleToFill" id="RootView">
+                        <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
+                        <subviews>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" image="drink_more_water" translatesAutoresizingMaskIntoConstraints="NO" id="GlassImage">
+                                <rect key="frame" x="-68.5" y="87" width="551" height="722"/>
+                            </imageView>
+                        </subviews>
+                        <color key="backgroundColor" systemColor="systemBlueColor"/>
+                        <constraints>
+                            <constraint firstItem="GlassImage" firstAttribute="centerX" secondItem="RootView" secondAttribute="centerX" id="CenterX"/>
+                            <constraint firstItem="GlassImage" firstAttribute="centerY" secondItem="RootView" secondAttribute="centerY" id="CenterY"/>
+                            <constraint firstItem="GlassImage" firstAttribute="width" constant="551" id="Width"/>
+                            <constraint firstItem="GlassImage" firstAttribute="height" constant="722" id="Height"/>
+                        </constraints>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="FirstResponder" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="0.0" y="0.0"/>
+        </scene>
+    </scenes>
+    <resources>
+        <image name="drink_more_water" width="1024" height="1024"/>
+        <systemColor name="systemBlueColor">
+            <color red="0.0" green="0.4784313725" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+        </systemColor>
+    </resources>
+</document>

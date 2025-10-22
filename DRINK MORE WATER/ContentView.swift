@@ -4,58 +4,38 @@
 //
 //  Created by AARON PERILLAT on 10/22/25.
 //
-
 import SwiftUI
-import SwiftData
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
-
     var body: some View {
-        NavigationSplitView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
-                    }
-                }
-                .onDelete(perform: deleteItems)
-            }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
-            }
-        } detail: {
-            Text("Select an item")
+        ZStack {
+            Color(.systemBlue)
+                .ignoresSafeArea()
+
+            Image("empty_glass")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 551, height: 722)
+                .accessibilityHidden(true)
         }
     }
+}
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
-    }
+struct SplashView: View {
+    var body: some View {
+        ZStack {
+            Color(.systemBlue)
 
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
-            }
+            Image("drink_more_water")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 551, height: 722)
+                .accessibilityHidden(true)
         }
+        .ignoresSafeArea()
     }
 }
 
 #Preview {
     ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
 }
