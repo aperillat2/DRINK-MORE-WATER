@@ -10,6 +10,9 @@ import SwiftData
 
 @main
 struct DRINK_MORE_WATERApp: App {
+    private let uiTestsSkipFlag = "-UITestsSkipSplash"
+    private var shouldSkipSplash: Bool { ProcessInfo.processInfo.arguments.contains(uiTestsSkipFlag) }
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Item.self,
@@ -35,8 +38,11 @@ struct DRINK_MORE_WATERApp: App {
                 }
             }
             .animation(.easeInOut(duration: 0.3), value: showSplash)
+            .onAppear {
+                if shouldSkipSplash { showSplash = false }
+            }
             .task {
-                guard showSplash else { return }
+                guard showSplash && !shouldSkipSplash else { return }
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 withAnimation {
                     showSplash = false

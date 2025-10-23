@@ -10,9 +10,9 @@ import UIKit
 #endif
 
 struct ContentView: View {
-    @AppStorage("intakeOz") private var intakeOz: Int = 0
-    @AppStorage("lastIntakeDate") private var lastIntakeDateString: String = ""
-    @AppStorage("dailyGoalOz") private var dailyGoalOz: Int = 80
+    private let haptics = HapticsFactory.default()
+    private let calculator = FillFractionCalculator()
+    @StateObject private var viewModel = WaterIntakeViewModel()
     @Environment(\.scenePhase) private var scenePhase
     @State private var showResetConfirmation: Bool = false
 
@@ -23,95 +23,41 @@ struct ContentView: View {
     private let maskVerticalOffset: CGFloat = 5
     private let maskHorizontalOffset: CGFloat = 2
 
-    private let ozPerTap: Int = 10
-
     private var fillFraction: CGFloat {
         let bounds = maskBounds
-        guard dailyGoalOz > 0 else { return bounds.emptyFraction }
-
-        let goal = CGFloat(dailyGoalOz)
-        let intake = max(0, min(goal, CGFloat(intakeOz)))
-        if intake <= 0 { return bounds.emptyFraction }
-
-        let perTapValue = max(1, CGFloat(ozPerTap))
-        let span = max(bounds.fullFraction - bounds.emptyFraction, 0.001)
-        let totalSteps = max(1, Int(ceil(goal / perTapValue)))
-
-        // Trim the bottom/top according to the mask so the first tap is visible
-        // while keeping the final tap just below the rim.
-        let bottomTrim = min(span * 0.3, span / CGFloat(totalSteps) * 2.6)
-        let topTrim = min(span * 0.03, span / CGFloat(totalSteps) * 0.4)
-
-        let minFraction = min(bounds.fullFraction - topTrim, bounds.emptyFraction + bottomTrim)
-        let maxFraction = max(minFraction, bounds.fullFraction - topTrim)
-
-        if intake <= 0 {
-            return bounds.emptyFraction
-        }
-
-        if intake >= goal {
-            return maxFraction
-        }
-
-        let normalized = max(0, min(1, (intake - perTapValue) / max(goal - perTapValue, 1)))
-        let fraction = minFraction + normalized * (maxFraction - minFraction)
-
-        return max(bounds.emptyFraction, min(fraction, maxFraction))
+        let goal = CGFloat(viewModel.dailyGoalOz)
+        let intake = CGFloat(viewModel.intakeOz)
+        let perTap = CGFloat(viewModel.ozPerTap)
+        let calcBounds = CalcMaskBounds(emptyFraction: bounds.emptyFraction, fullFraction: bounds.fullFraction)
+        return calculator.fraction(intakeOz: intake, goalOz: goal, bounds: calcBounds, perTapOz: perTap)
     }
 
     private func todayString() -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar.current
-        formatter.locale = Locale.current
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyy-MM-dd" // day precision
-        return formatter.string(from: Date())
-    }
-
-    private func resetIfNeeded() {
-        let today = todayString()
-        if lastIntakeDateString != today {
-            intakeOz = 0
-            lastIntakeDateString = today
-        }
-    }
-
-    private func playHaptic(style: UIImpactFeedbackGenerator.FeedbackStyle) {
-        #if os(iOS)
-        let generator = UIImpactFeedbackGenerator(style: style)
-        generator.prepare()
-        generator.impactOccurred()
-        #endif
+        DateUtils.todayString()
     }
 
     private func playSuccessHaptic() {
-        #if os(iOS)
-        let generator = UINotificationFeedbackGenerator()
-        generator.prepare()
-        generator.notificationOccurred(.success)
-        #endif
+        haptics.success()
     }
 
     private func handleTap() {
-        resetIfNeeded()
-        guard intakeOz < dailyGoalOz else { return }
-
-        let newValue = min(intakeOz + ozPerTap, dailyGoalOz)
+        viewModel.resetIfNeeded()
+        guard let step = viewModel.nextIntakeStep() else { return }
 
         // Light haptic on each increment
-        playHaptic(style: .light)
+        haptics.impactLight()
 
         withAnimation(.easeInOut(duration: 0.25)) {
-            intakeOz = newValue
+            viewModel.intakeOz = step.newValue
         }
-        // Success haptic when the goal is reached
-        if intakeOz >= dailyGoalOz {
+
+        if step.reachedGoal {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                 playSuccessHaptic()
             }
         }
 
-        if lastIntakeDateString.isEmpty { lastIntakeDateString = todayString() }
+        if viewModel.lastIntakeDateString.isEmpty { viewModel.lastIntakeDateString = todayString() }
     }
 
     var body: some View {
@@ -145,10 +91,10 @@ struct ContentView: View {
                 Spacer()
                 VStack(spacing: 20) {
                     VStack(spacing: 10) {
-                        Text("\(intakeOz) / \(dailyGoalOz) oz")
+                        Text("\(viewModel.intakeOz) / \(viewModel.dailyGoalOz) oz")
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(.white)
-                        Text("Tap the glass to add \(ozPerTap) oz")
+                        Text("Tap the glass to add \(viewModel.ozPerTap) oz")
                             .font(.subheadline)
                             .foregroundStyle(.white.opacity(0.7))
                     }
@@ -159,15 +105,15 @@ struct ContentView: View {
                                 .font(.headline)
                                 .foregroundStyle(.white)
                             Spacer()
-                            Text("\(dailyGoalOz) oz")
+                            Text("\(viewModel.dailyGoalOz) oz")
                                 .font(.headline)
                                 .foregroundStyle(.white.opacity(0.75))
                         }
 
                         Slider(
                             value: Binding(
-                                get: { Double(dailyGoalOz) },
-                                set: { dailyGoalOz = Int($0.rounded()) }
+                                get: { Double(viewModel.dailyGoalOz) },
+                                set: { viewModel.dailyGoalOz = Int($0.rounded()) }
                             ),
                             in: 40...200,
                             step: 10
@@ -194,21 +140,21 @@ struct ContentView: View {
         .alert("Reset today's intake?", isPresented: $showResetConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Reset", role: .destructive) {
-                intakeOz = 0
-                lastIntakeDateString = todayString()
+                viewModel.intakeOz = 0
+                viewModel.lastIntakeDateString = todayString()
             }
         } message: {
             Text("This will set today's filled amount back to 0 oz.")
         }
         .contentShape(Rectangle())
-        .onAppear(perform: resetIfNeeded)
+        .onAppear { viewModel.resetIfNeeded() }
         .onAppear {
             #if os(iOS)
             _ = MaskAnalyzer.shared.prepare()
             #endif
         }
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .active { resetIfNeeded() }
+            if newPhase == .active { viewModel.resetIfNeeded() }
         }
     }
 }
