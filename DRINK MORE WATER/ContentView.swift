@@ -22,6 +22,7 @@ struct ContentView: View {
     private let textOffset: CGSize = CGSize(width: 0, height: 58)
     private let maskVerticalOffset: CGFloat = 5
     private let maskHorizontalOffset: CGFloat = 2
+    private let uiTestButtonFlag = "-UITestsForceButton"
 
     private var fillFraction: CGFloat {
         let bounds = maskBounds
@@ -65,27 +66,7 @@ struct ContentView: View {
             Color(.systemBlue)
                 .ignoresSafeArea()
 
-            ZStack {
-                Image("glass_text")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: glassSize.width, height: glassSize.height)
-                    .scaleEffect(textScale)
-                    .offset(y: glassVerticalNudge)
-                    .offset(x: textOffset.width, y: textOffset.height)
-                    .accessibilityHidden(true)
-
-                glassMaskedWater()
-                    .allowsHitTesting(false)
-
-                Image("empty_glass")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: glassSize.width, height: glassSize.height)
-                    .offset(y: glassVerticalNudge)
-                    .accessibilityHidden(true)
-            }
-            .onTapGesture(perform: handleTap)
+            interactiveGlass
 
             VStack {
                 Spacer()
@@ -94,6 +75,7 @@ struct ContentView: View {
                         Text("\(viewModel.intakeOz) / \(viewModel.dailyGoalOz) oz")
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(.white)
+                            .accessibilityIdentifier("intakeLabel")
                         Text("Tap the glass to add \(viewModel.ozPerTap) oz")
                             .font(.subheadline)
                             .foregroundStyle(.white.opacity(0.7))
@@ -161,6 +143,54 @@ struct ContentView: View {
 
 // MARK: - Private helpers
 private extension ContentView {
+    var shouldUseButtonForTap: Bool {
+        ProcessInfo.processInfo.arguments.contains(uiTestButtonFlag)
+    }
+
+    @ViewBuilder
+    var interactiveGlass: some View {
+        if shouldUseButtonForTap {
+            Button(action: handleTap) {
+                glassVisual
+            }
+            .buttonStyle(NoHighlightButtonStyle())
+            .accessibilityLabel("Water glass")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("waterGlass")
+        } else {
+            glassVisual
+                .contentShape(Rectangle())
+                .onTapGesture(perform: handleTap)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Water glass")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("waterGlass")
+        }
+    }
+
+    var glassVisual: some View {
+        ZStack {
+            Image("glass_text")
+                .resizable()
+                .scaledToFit()
+                .frame(width: glassSize.width, height: glassSize.height)
+                .scaleEffect(textScale)
+                .offset(y: glassVerticalNudge)
+                .offset(x: textOffset.width, y: textOffset.height)
+                .accessibilityHidden(true)
+
+            glassMaskedWater()
+                .allowsHitTesting(false)
+
+            Image("empty_glass")
+                .resizable()
+                .scaledToFit()
+                .frame(width: glassSize.width, height: glassSize.height)
+                .offset(y: glassVerticalNudge)
+                .accessibilityHidden(true)
+        }
+    }
+
     var maskBounds: MaskBounds {
         #if os(iOS)
         if let bounds = MaskAnalyzer.shared.bounds {
@@ -329,4 +359,10 @@ struct SplashView: View {
 
 #Preview {
     ContentView()
+}
+
+private struct NoHighlightButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+    }
 }
