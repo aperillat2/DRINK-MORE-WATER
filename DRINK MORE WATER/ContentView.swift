@@ -39,6 +39,13 @@ struct ContentView: View {
     private let surfacePulseDuration: Double = 0.9
     private let surfacePulseSpeed: Double = 1.35
 
+    // Level animation (drives water fill + surface together)
+    @State private var displayedFraction: CGFloat = 0        // what the UI shows
+    @State private var levelAnimFrom: CGFloat = 0
+    @State private var levelAnimTo: CGFloat = 0
+    @State private var levelAnimStart: Double? = nil
+    private let levelAnimDuration: Double = 1.5
+
     // Layout
     private let glassSize = CGSize(width: 551, height: 722)
     private let glassVerticalNudge: CGFloat = -20
@@ -68,7 +75,7 @@ struct ContentView: View {
         surfacePulseStart = Date.timeIntervalSinceReferenceDate
         haptics.impactLight()
         sfx.playSplash()
-        withAnimation(.easeInOut(duration: 0.25)) { viewModel.intakeOz = step.newValue }
+        viewModel.intakeOz = step.newValue
         if step.reachedGoal { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { playSuccessHaptic() } }
         if viewModel.lastIntakeDateString.isEmpty { viewModel.lastIntakeDateString = todayString() }
     }
@@ -156,6 +163,13 @@ struct ContentView: View {
             #if os(iOS)
             _ = MaskAnalyzer.shared.prepare()
             #endif
+
+            // Initialize level animation state
+            let cur = clamp01(fillFraction)
+            displayedFraction = cur
+            levelAnimFrom = cur
+            levelAnimTo = cur
+            levelAnimStart = nil
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
@@ -165,6 +179,26 @@ struct ContentView: View {
                 let t = Date.timeIntervalSinceReferenceDate
                 frozenPhase = Self.rippleSeed + t * waveSpeed
             }
+        }
+        // Start a new 1.0 s ramp whenever the model fraction changes
+        .onChange(of: fillFraction) { _, new in
+            let target = clamp01(new)
+            let now = Date.timeIntervalSinceReferenceDate
+
+            // Compute the current on-screen fraction (respecting any in-flight animation)
+            let current: CGFloat
+            if let start = levelAnimStart {
+                let raw = min(max((now - start) / levelAnimDuration, 0), 1)
+                let eased = easeOutCubic(raw)
+                current = levelAnimFrom + CGFloat(eased) * (levelAnimTo - levelAnimFrom)
+            } else {
+                current = displayedFraction
+            }
+
+            levelAnimFrom = clamp01(current)
+            levelAnimTo = target
+            levelAnimStart = now
+            surfacePulseStart = now
         }
     }
 }
@@ -184,6 +218,15 @@ private extension ContentView {
         return 88.0 / 480.0
     }
     
+    // Clamp helper
+    func clamp01(_ x: CGFloat) -> CGFloat { max(0, min(1, x)) }
+    // Ease-out cubic (fast start, gentle finish)
+    func easeOutCubic(_ t: Double) -> Double {
+        let u = max(0.0, min(1.0, t))
+        let inv = 1.0 - u
+        return 1.0 - inv * inv * inv
+    }
+    
     private final class SoundFX {
         static let shared = SoundFX()
         private var splashPlayer: AVAudioPlayer?
@@ -199,8 +242,8 @@ private extension ContentView {
             let bundle = Bundle.main
             // Works whether "Sounds" is a real folder (blue) or just a group (yellow)
             let url =
-                bundle.url(forResource: "water-pour2", withExtension: "caf", subdirectory: "Sounds") ??
-                bundle.url(forResource: "water-pour2", withExtension: "caf")
+                bundle.url(forResource: "water pour 2", withExtension: "caf", subdirectory: "Sounds") ??
+                bundle.url(forResource: "water pou 2", withExtension: "caf")
             guard let url else { return }
             splashPlayer = try? AVAudioPlayer(contentsOf: url)
             splashPlayer?.prepareToPlay()
@@ -214,72 +257,17 @@ private extension ContentView {
         }
     }
 
-    @ViewBuilder
-    var interactiveGlass: some View {
-        if shouldUseButtonForTap {
-            Button(action: handleTap) { glassVisual }
-                .buttonStyle(NoHighlightButtonStyle())
-                .accessibilityLabel("Water glass")
-                .accessibilityAddTraits(.isButton)
-                .accessibilityIdentifier("waterGlass")
-        } else {
-            glassVisual
-                .contentShape(Rectangle())
-                .onTapGesture(perform: handleTap)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Water glass")
-                .accessibilityAddTraits(.isButton)
-                .accessibilityIdentifier("waterGlass")
-        }
-    }
-    
-    // Helper: mask aligned to glass + tweak
-    func glassMaskForOverlays(biasY: CGFloat = 0) -> some View {
-        let px = 1.0 / max(displayScale, 1)
-        let y = round((glassVerticalNudge + maskVerticalOffset + biasY) / px) * px
-        return Image("glass_mask")
-            .resizable()
-            .scaledToFit()
-            .frame(width: glassSize.width, height: glassSize.height)
-            .offset(x: maskHorizontalOffset, y: y)
-    }
-
-    var glassVisual: some View {
-        TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { _ in
-            let now = Date.timeIntervalSinceReferenceDate
-            let fraction = max(0, min(fillFraction, 1))
-            let ripplePhase = frozenPhase ?? (Self.rippleSeed + now * waveSpeed)
-
-            // Single source of truth for water top
-            let waterTop = glassSize.height * (1 - fraction)
-            let px = 1.0 / max(displayScale, 1)
-            let waterTopAligned = round(waterTop / px) * px
-
-            #if os(iOS)
-            let yFrac = max(0, min(1, waterTopAligned / glassSize.height))
-            let widthFraction = GlassWidthAnalyzer.shared.widthFraction(atYFraction: yFrac) ?? 1.0
-            #else
-            let widthFraction: CGFloat = 1.0
-            #endif
-
-            // Fill mask = glass − surface (aligned to fill offset)
-            let fillMask =
-                ZStack {
-                    glassMaskAlignedToFill()
-                    WaterSurfaceCutout(
-                        glassSize: glassSize,
-                        verticalOffset: glassVerticalNudge,
-                        waterY: waterTopAligned,
-                        widthFraction: widthFraction,
-                        surfaceMaskAspect: surfaceMaskAspect
-                    )
-                    .blendMode(.destinationOut)
-                    .transaction { $0.animation = nil }
-                    .animation(nil, value: waterTopAligned)
-                }
-                .compositingGroup()
-                .drawingGroup()
-
+    // Extracted to reduce type-checking load
+    func makeGlassStack(
+        fraction: CGFloat,
+        ripplePhase: Double,
+        widthFraction: CGFloat,
+        surfaceMaskAspect: CGFloat,
+        waterTopAligned: CGFloat,
+        now: Double,
+        fillMask: AnyView
+    ) -> AnyView {
+        AnyView(
             ZStack {
                 // Text with underwater refraction
                 refractedGlassText(
@@ -321,12 +309,12 @@ private extension ContentView {
                 .allowsHitTesting(false)
 
                 if showCalibration { calibrationOverlay.zIndex(1000) }
-                
+
                 let px = 1.0 / max(displayScale, 1)
                 let contentY = round(glassVerticalNudge / px) * px
 
                 // Raise positive bias, lower negative
-                let shimmerMaskBiasY: CGFloat = 0   // try 1 or -1 if off by a pixel
+                let shimmerMaskBiasY: CGFloat = 0
 
                 GlassLightShimmer(glassSize: glassSize)
                     .offset(y: contentY)
@@ -339,7 +327,7 @@ private extension ContentView {
                     .mask(glassMaskForOverlays(biasY: shimmerMaskBiasY))
                     .blendMode(.multiply)
                     .allowsHitTesting(false)
-                
+
                 Image("empty_glass")
                     .resizable()
                     .scaledToFit()
@@ -347,6 +335,120 @@ private extension ContentView {
                     .offset(y: glassVerticalNudge)
                     .accessibilityHidden(true)
             }
+        )
+    }
+
+    // Extracted to reduce type-checking load
+    func makeFillMask(waterTopAligned: CGFloat, widthFraction: CGFloat, surfaceMaskAspect: CGFloat) -> AnyView {
+        AnyView(
+            ZStack {
+                glassMaskAlignedToFill()
+                WaterSurfaceCutout(
+                    glassSize: glassSize,
+                    verticalOffset: glassVerticalNudge,
+                    waterY: waterTopAligned,
+                    widthFraction: widthFraction,
+                    surfaceMaskAspect: surfaceMaskAspect
+                )
+                .blendMode(.destinationOut)
+                .transaction { $0.animation = nil }
+                .animation(nil, value: waterTopAligned)
+            }
+            .compositingGroup()
+            .drawingGroup()
+        )
+    }
+
+    @ViewBuilder
+    var interactiveGlass: some View {
+        if shouldUseButtonForTap {
+            Button(action: handleTap) { glassVisual }
+                .buttonStyle(NoHighlightButtonStyle())
+                .accessibilityLabel("Water glass")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("waterGlass")
+        } else {
+            glassVisual
+                .contentShape(Rectangle())
+                .onTapGesture(perform: handleTap)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Water glass")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("waterGlass")
+        }
+    }
+    
+    // Helper: mask aligned to glass + tweak
+    func glassMaskForOverlays(biasY: CGFloat = 0) -> some View {
+        let px = 1.0 / max(displayScale, 1)
+        let y = round((glassVerticalNudge + maskVerticalOffset + biasY) / px) * px
+        return Image("glass_mask")
+            .resizable()
+            .scaledToFit()
+            .frame(width: glassSize.width, height: glassSize.height)
+            .offset(x: maskHorizontalOffset, y: y)
+    }
+
+    // Further type-erasure to help the compiler in the TimelineView closure
+    func buildGlassContent(now: Double) -> AnyView {
+        // Drive a manual 1.0 s ease-out ramp independent of implicit animations.
+        var fraction = displayedFraction
+        if let start = levelAnimStart {
+            let raw = min(max((now - start) / levelAnimDuration, 0), 1)
+            let eased = easeOutCubic(raw)
+            fraction = levelAnimFrom + CGFloat(eased) * (levelAnimTo - levelAnimFrom)
+            displayedFraction = fraction
+            if raw >= 1 {
+                levelAnimStart = nil
+                displayedFraction = levelAnimTo
+                fraction = levelAnimTo
+            }
+        } else {
+            // When not animating, continue from the last displayed value to avoid reset jumps.
+            // We already sync displayedFraction onAppear and when scene becomes inactive/active.
+            fraction = displayedFraction
+        }
+
+        // Clamp to prevent any temporary out-of-range artifacts
+        fraction = clamp01(fraction)
+
+        let ripplePhase = frozenPhase ?? (Self.rippleSeed + now * waveSpeed)
+
+        // Single source of truth for water top
+        let waterTop = glassSize.height * (1 - fraction)
+        let px = 1.0 / max(displayScale, 1)
+        let waterTopAligned = round(waterTop / px) * px
+
+        #if os(iOS)
+        let yFrac = max(0, min(1, waterTopAligned / glassSize.height))
+        let widthFraction = GlassWidthAnalyzer.shared.widthFraction(atYFraction: yFrac) ?? 1.0
+        #else
+        let widthFraction: CGFloat = 1.0
+        #endif
+
+        let fillMask = makeFillMask(
+            waterTopAligned: waterTopAligned,
+            widthFraction: widthFraction,
+            surfaceMaskAspect: surfaceMaskAspect
+        )
+
+        let content = makeGlassStack(
+            fraction: fraction,
+            ripplePhase: ripplePhase,
+            widthFraction: widthFraction,
+            surfaceMaskAspect: surfaceMaskAspect,
+            waterTopAligned: waterTopAligned,
+            now: now,
+            fillMask: fillMask
+        )
+        return content
+    }
+
+    var glassVisual: some View {
+        TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { _ in
+            let now = Date.timeIntervalSinceReferenceDate
+
+            buildGlassContent(now: now)
         }
     }
 
@@ -387,7 +489,7 @@ private extension ContentView {
         ripplePhase: Double,
         widthFraction: CGFloat,
         surfaceMaskAspect: CGFloat
-    ) -> some View {
+    ) -> AnyView {
         let clamped = max(0, min(fraction, 1))
         let realWaterY = max(0, min(glassSize.height, glassSize.height * (1 - clamped)))
 
@@ -400,41 +502,43 @@ private extension ContentView {
         let localAbove = max(0, min(glassSize.height, realWaterY - textOffset.height))
         let aboveAligned = round(localAbove / px) * px
 
-        return ZStack {
-            // ABOVE WATER — mask height changes instantly (no implicit tween)
-            Image("glass_text")
-                .resizable()
-                .scaledToFit()
-                .frame(width: glassSize.width, height: glassSize.height)
-                .scaleEffect(textScale)
-                .offset(y: glassVerticalNudge)
-                .offset(x: textOffset.width, y: textOffset.height)
-                .mask(
-                    Rectangle()
-                        .frame(width: glassSize.width, height: aboveAligned)
-                        .offset(y: glassVerticalNudge + textOffset.height - glassSize.height/2 + aboveAligned/2)
+        return AnyView(
+            ZStack {
+                // ABOVE WATER — mask height changes instantly (no implicit tween)
+                Image("glass_text")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: glassSize.width, height: glassSize.height)
+                    .scaleEffect(textScale)
+                    .offset(y: glassVerticalNudge)
+                    .offset(x: textOffset.width, y: textOffset.height)
+                    .mask(
+                        Rectangle()
+                            .frame(width: glassSize.width, height: aboveAligned)
+                            .offset(y: glassVerticalNudge + textOffset.height - glassSize.height/2 + aboveAligned/2)
+                    )
+                    .transaction { $0.animation = nil }
+                    .animation(nil, value: aboveAligned)
+                    .animation(nil, value: fraction)
+                    .accessibilityHidden(true)
+
+                // UNDER WATER — starts at offset seam
+                RefractedTextView(
+                    imageName: "glass_text",
+                    glassSize: glassSize,
+                    textScale: textScale,
+                    textOffset: textOffset,
+                    verticalNudge: glassVerticalNudge,
+                    waterline: underwaterStartY,
+                    ripplePhase: ripplePhase,
+                    rippleAmplitude: 4
                 )
+                .mask(glassMask())
                 .transaction { $0.animation = nil }
-                .animation(nil, value: aboveAligned)
                 .animation(nil, value: fraction)
                 .accessibilityHidden(true)
-
-            // UNDER WATER — starts at offset seam
-            RefractedTextView(
-                imageName: "glass_text",
-                glassSize: glassSize,
-                textScale: textScale,
-                textOffset: textOffset,
-                verticalNudge: glassVerticalNudge,
-                waterline: underwaterStartY,
-                ripplePhase: ripplePhase,
-                rippleAmplitude: 4
-            )
-            .mask(glassMask())
-            .transaction { $0.animation = nil }
-            .animation(nil, value: fraction)
-            .accessibilityHidden(true)
-        }
+            }
+        )
     }
 
 
@@ -847,7 +951,7 @@ private extension Color {
         b.getRed(&r2, green: &g2, blue: &b2c, alpha: &a2)
         return Color(
             red: Double(r1 + (r2 - r1) * f),
-            green: Double(g1 + (r2 - g1) * f),
+            green: Double(g1 + (g2 - g1) * f),
             blue: Double(b1c + (b2c - b1c) * f),
             opacity: Double(a1 + (a2 - a1) * f)
         )
@@ -1087,7 +1191,7 @@ struct SplashView: View {
     var body: some View {
         ZStack {
             Color(.systemBlue)
-            Image("drink_more_water")
+            Image("drink more water")
                 .resizable()
                 .scaledToFit()
                 .frame(width: 551, height: 722)
@@ -1104,3 +1208,5 @@ struct SplashView: View {
 private struct NoHighlightButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View { configuration.label }
 }
+
+
