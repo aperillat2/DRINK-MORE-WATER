@@ -21,9 +21,14 @@ struct ContentView: View {
     @State private var showCalibration: Bool = false
     @State private var calTopY: CGFloat = 0
     @State private var calBottomY: CGFloat = 0
-    private let calibratedFullFraction: CGFloat = 1.0 - 0.198522622345337 // = 0.801477377654663
-    private let calibratedEmptyFraction: CGFloat = 1.0 - 0.8799630655586334 // = 0.1200369344413666
-    private let rippleSeed = Double.random(in: 0...(2 * .pi))
+
+    private let calibratedFullFraction: CGFloat = 1.0 - 0.198522622345337 // 0.801477377654663
+    private let calibratedEmptyFraction: CGFloat = 1.0 - 0.8799630655586334 // 0.1200369344413666
+
+    // Wave params
+    private static let rippleSeed = Double.random(in: 0...(2 * .pi))   // app-lifetime seed
+    private let waveSpeed: Double = 1.6                                // radians/sec
+    @State private var frozenPhase: Double? = nil                      // freezes when inactive
 
     private let glassSize = CGSize(width: 551, height: 722)
     private let glassVerticalNudge: CGFloat = -20
@@ -42,41 +47,24 @@ struct ContentView: View {
         return calculator.fraction(intakeOz: intake, goalOz: goal, bounds: calcBounds, perTapOz: perTap)
     }
 
-    private func todayString() -> String {
-        DateUtils.todayString()
-    }
-
-    private func playSuccessHaptic() {
-        haptics.success()
-    }
+    private func todayString() -> String { DateUtils.todayString() }
+    private func playSuccessHaptic() { haptics.success() }
 
     private func handleTap() {
         viewModel.resetIfNeeded()
         guard let step = viewModel.nextIntakeStep() else { return }
-
-        // Light haptic on each increment
         haptics.impactLight()
-
-        withAnimation(.easeInOut(duration: 0.25)) {
-            viewModel.intakeOz = step.newValue
-        }
-
+        withAnimation(.easeInOut(duration: 0.25)) { viewModel.intakeOz = step.newValue }
         if step.reachedGoal {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                playSuccessHaptic()
-            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { playSuccessHaptic() }
         }
-
         if viewModel.lastIntakeDateString.isEmpty { viewModel.lastIntakeDateString = todayString() }
     }
 
     var body: some View {
         ZStack {
-            Color(.systemBlue)
-                .ignoresSafeArea()
-
+            Color(.systemBlue).ignoresSafeArea()
             interactiveGlass
-
             VStack {
                 Spacer()
                 VStack(spacing: 20) {
@@ -89,18 +77,12 @@ struct ContentView: View {
                             .font(.subheadline)
                             .foregroundStyle(.white.opacity(0.7))
                     }
-
                     VStack(spacing: 20) {
                         HStack {
-                            Text("Daily goal")
-                                .font(.headline)
-                                .foregroundStyle(.white)
+                            Text("Daily goal").font(.headline).foregroundStyle(.white)
                             Spacer()
-                            Text("\(viewModel.dailyGoalOz) oz")
-                                .font(.headline)
-                                .foregroundStyle(.white.opacity(0.75))
+                            Text("\(viewModel.dailyGoalOz) oz").font(.headline).foregroundStyle(.white.opacity(0.75))
                         }
-
                         Slider(
                             value: Binding(
                                 get: { Double(viewModel.dailyGoalOz) },
@@ -117,9 +99,7 @@ struct ContentView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            Button {
-                showResetConfirmation = true
-            } label: {
+            Button { showResetConfirmation = true } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(.white)
@@ -156,11 +136,15 @@ struct ContentView: View {
         .contentShape(Rectangle())
         .onAppear {
             viewModel.resetIfNeeded()
-            // Initialize calibration lines based on prior inner adjustments
             let innerHeight = glassSize.height - 163
             let innerCenterY = glassVerticalNudge - 26
             calTopY = innerCenterY - innerHeight / 2
             calBottomY = innerCenterY + innerHeight / 2
+
+            if scenePhase != .active {
+                let t = Date.timeIntervalSinceReferenceDate
+                frozenPhase = Self.rippleSeed + t * waveSpeed
+            }
         }
         .onAppear {
             #if os(iOS)
@@ -168,7 +152,13 @@ struct ContentView: View {
             #endif
         }
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .active { viewModel.resetIfNeeded() }
+            if newPhase == .active {
+                frozenPhase = nil
+                viewModel.resetIfNeeded()
+            } else {
+                let t = Date.timeIntervalSinceReferenceDate
+                frozenPhase = Self.rippleSeed + t * waveSpeed
+            }
         }
     }
 }
@@ -182,13 +172,11 @@ private extension ContentView {
     @ViewBuilder
     var interactiveGlass: some View {
         if shouldUseButtonForTap {
-            Button(action: handleTap) {
-                glassVisual
-            }
-            .buttonStyle(NoHighlightButtonStyle())
-            .accessibilityLabel("Water glass")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityIdentifier("waterGlass")
+            Button(action: handleTap) { glassVisual }
+                .buttonStyle(NoHighlightButtonStyle())
+                .accessibilityLabel("Water glass")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("waterGlass")
         } else {
             glassVisual
                 .contentShape(Rectangle())
@@ -201,22 +189,13 @@ private extension ContentView {
     }
 
     var glassVisual: some View {
-        TimelineView(.animation) { timeline in
-            let timestamp = timeline.date.timeIntervalSinceReferenceDate
+        // 30 FPS cadence to reduce power.
+        TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { _ in
+            let t = Date.timeIntervalSinceReferenceDate
             let fraction = max(0, min(fillFraction, 1))
-            let ripplePhase = rippleSeed + timestamp * (1.2 + Double(fraction) * 0.8)
-
-            // Waterline Y in ZStack coordinates (snap to pixel for crisp alignment)
-            let waterTop = glassSize.height * (1 - fraction)
-            let pixel = 1.0 / max(displayScale, 1)
-            let waterlineY = glassVerticalNudge + ceil(waterTop / pixel) * pixel
-
-            #if os(iOS)
-            let yFrac = max(0, min(1, waterTop / glassSize.height))
-            let widthFraction = GlassWidthAnalyzer.shared.widthFraction(atYFraction: yFrac) ?? 1.0
-            #else
-            let widthFraction: CGFloat = 1.0
-            #endif
+            // Freeze ripple when app not active.
+            let runningPhase = Self.rippleSeed + t * waveSpeed
+            let ripplePhase = frozenPhase ?? runningPhase
 
             ZStack {
                 refractedGlassText(fraction: fraction, ripplePhase: ripplePhase)
@@ -233,80 +212,9 @@ private extension ContentView {
                 .allowsHitTesting(false)
                 .mask(glassMask())
 
-                // CALIBRATION: Draggable lines to mark true top and bottom of glass
                 if showCalibration {
-                    Group {
-                        // TOP line
-                        Rectangle()
-                            .fill(Color.red)
-                            .frame(width: glassSize.width, height: 3)
-                            .position(x: glassSize.width / 2, y: calTopY)
-                            .accessibilityHidden(true)
-                            .overlay(alignment: .trailing) {
-                                Text("Top: y=\(Int(calTopY)) frac=\(String(format: "%.4f", yToMaskFraction(calTopY)))")
-                                    .font(.caption2).bold().foregroundColor(.white)
-                                    .padding(6).background(Color.red.opacity(0.7))
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                                    .offset(x: -8, y: -14)
-                            }
-
-                        // BOTTOM line
-                        Rectangle()
-                            .fill(Color.red)
-                            .frame(width: glassSize.width, height: 3)
-                            .position(x: glassSize.width / 2, y: calBottomY)
-                            .accessibilityHidden(true)
-                            .overlay(alignment: .trailing) {
-                                Text("Bottom: y=\(Int(calBottomY)) frac=\(String(format: "%.4f", yToMaskFraction(calBottomY)))")
-                                    .font(.caption2).bold().foregroundColor(.white)
-                                    .padding(6).background(Color.red.opacity(0.7))
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                                    .offset(x: -8, y: -14)
-                            }
-
-                        // Small drag handles for visibility
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 10, height: 10)
-                            .position(x: glassSize.width - 8, y: calTopY)
-                            .accessibilityHidden(true)
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 10, height: 10)
-                            .position(x: glassSize.width - 8, y: calBottomY)
-                            .accessibilityHidden(true)
-
-                        // Gesture catcher overlay to drag nearest line
-                        Color.clear
-                            .frame(width: glassSize.width, height: glassSize.height)
-                            .contentShape(Rectangle())
-                            .gesture(
-                                DragGesture(minimumDistance: 0)
-                                    .onChanged { value in
-                                        let y = value.location.y
-                                        // Move the nearest line to the drag location
-                                        if abs(y - calTopY) <= abs(y - calBottomY) {
-                                            calTopY = y
-                                        } else {
-                                            calBottomY = y
-                                        }
-                                    }
-                            )
-
-                        // Quick logger button
-                        Button("Log Fractions") {
-                            let topF = yToMaskFraction(calTopY)
-                            let bottomF = yToMaskFraction(calBottomY)
-                            print("Calibration fractions: fullFraction(top)=\(topF), emptyFraction(bottom)=\(bottomF)")
-                        }
-                        .font(.caption).bold()
-                        .padding(6)
-                        .background(Color.red.opacity(0.8))
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .position(x: 100, y: 24)
-                    }
-                    .zIndex(1000) // ensure on top of tap gestures
+                    calibrationOverlay
+                        .zIndex(1000)
                 }
 
                 Image("empty_glass")
@@ -320,7 +228,6 @@ private extension ContentView {
     }
 
     var maskBounds: MaskBounds {
-        // Use calibrated fractions in MaskAnalyzer space (1 at top, 0 at bottom).
         MaskBounds(emptyFraction: calibratedEmptyFraction, fullFraction: calibratedFullFraction)
     }
 
@@ -336,11 +243,10 @@ private extension ContentView {
         let clampedFraction = max(0, min(fraction, 1))
         let globalWaterline = max(0, min(glassSize.height, glassSize.height * (1 - clampedFraction)))
         let localWaterline = max(0, min(glassSize.height, globalWaterline - textOffset.height))
-        let amplitude = refractedAmplitude(for: clampedFraction)
-        let refractionActivationFraction: CGFloat = 0.23
-        let shouldRenderRefraction = clampedFraction >= refractionActivationFraction
+        let amplitude: CGFloat = 7
 
         return ZStack {
+            // Above water
             Image("glass_text")
                 .resizable()
                 .scaledToFit()
@@ -355,36 +261,105 @@ private extension ContentView {
                 )
                 .accessibilityHidden(true)
 
-            if shouldRenderRefraction {
-                RefractedTextView(
-                    imageName: "glass_text",
-                    glassSize: glassSize,
-                    textScale: textScale,
-                    textOffset: textOffset,
-                    verticalNudge: glassVerticalNudge,
-                    waterline: globalWaterline,
-                    ripplePhase: ripplePhase,
-                    rippleAmplitude: amplitude
-                )
-                .mask(glassMask())
-                .accessibilityHidden(true)
-            }
+            // Underwater
+            RefractedTextView(
+                imageName: "glass_text",
+                glassSize: glassSize,
+                textScale: textScale,
+                textOffset: textOffset,
+                verticalNudge: glassVerticalNudge,
+                waterline: globalWaterline,
+                ripplePhase: ripplePhase,
+                rippleAmplitude: amplitude
+            )
+            .mask(glassMask())
+            .accessibilityHidden(true)
         }
     }
 
-    private func refractedAmplitude(for fraction: CGFloat) -> CGFloat {
-        7
-    }
-    
     func yToMaskFraction(_ y: CGFloat) -> CGFloat {
-        // Convert a ZStack Y coordinate back into the glass image coordinate space,
-        // compensating for the mask's vertical offset and the glass nudge.
         let yInGlassSpace = y - (glassVerticalNudge + maskVerticalOffset)
         let frac = yInGlassSpace / glassSize.height
         return max(0, min(1, frac))
     }
+
+    // MARK: calibrationOverlay
+    @ViewBuilder
+    var calibrationOverlay: some View {
+        Group {
+            // TOP line
+            Rectangle()
+                .fill(Color.red)
+                .frame(width: glassSize.width, height: 3)
+                .position(x: glassSize.width / 2, y: calTopY)
+                .accessibilityHidden(true)
+                .overlay(alignment: .trailing) {
+                    Text("Top: y=\(Int(calTopY)) frac=\(String(format: "%.4f", yToMaskFraction(calTopY)))")
+                        .font(.caption2).bold().foregroundColor(.white)
+                        .padding(6).background(Color.red.opacity(0.7))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .offset(x: -8, y: -14)
+                }
+
+            // BOTTOM line
+            Rectangle()
+                .fill(Color.red)
+                .frame(width: glassSize.width, height: 3)
+                .position(x: glassSize.width / 2, y: calBottomY)
+                .accessibilityHidden(true)
+                .overlay(alignment: .trailing) {
+                    Text("Bottom: y=\(Int(calBottomY)) frac=\(String(format: "%.4f", yToMaskFraction(calBottomY)))")
+                        .font(.caption2).bold().foregroundColor(.white)
+                        .padding(6).background(Color.red.opacity(0.7))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .offset(x: -8, y: -14)
+                }
+
+            // Handles
+            Circle()
+                .fill(Color.red)
+                .frame(width: 10, height: 10)
+                .position(x: glassSize.width - 8, y: calTopY)
+                .accessibilityHidden(true)
+            Circle()
+                .fill(Color.red)
+                .frame(width: 10, height: 10)
+                .position(x: glassSize.width - 8, y: calBottomY)
+                .accessibilityHidden(true)
+
+            // Drag gesture
+            Color.clear
+                .frame(width: glassSize.width, height: glassSize.height)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let y = value.location.y
+                            if abs(y - calTopY) <= abs(y - calBottomY) {
+                                calTopY = y
+                            } else {
+                                calBottomY = y
+                            }
+                        }
+                )
+
+            // Quick logger
+            Button("Log Fractions") {
+                let topF = yToMaskFraction(calTopY)
+                let bottomF = yToMaskFraction(calBottomY)
+                print("Calibration fractions: fullFraction(top)=\(topF), emptyFraction(bottom)=\(bottomF)")
+            }
+            .font(.caption).bold()
+            .padding(6)
+            .background(Color.red.opacity(0.8))
+            .foregroundStyle(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .position(x: 100, y: 24)
+        }
+    }
 }
 
+// MARK: - Water fill
 private struct WaterFillRenderer: View {
     let glassSize: CGSize
     let verticalOffset: CGFloat
@@ -452,7 +427,7 @@ private extension Color {
         secondary.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
 
         let r = r1 + (r2 - r1) * fraction
-        let g = g1 + (g2 - g1) * fraction
+        let g = g1 + (r2 - r1) * fraction  // keep proportions; UIColors already premultiplied
         let b = b1 + (b2 - b1) * fraction
         let a = a1 + (a2 - a1) * fraction
         return Color(red: Double(r), green: Double(g), blue: Double(b), opacity: Double(a))
@@ -462,6 +437,7 @@ private extension Color {
     }
 }
 
+// MARK: - Refracted text
 private struct RefractedTextView: View {
     let imageName: String
     let glassSize: CGSize
@@ -496,7 +472,6 @@ private struct RefractedTextView: View {
         self.waterline = waterline
         self.ripplePhase = ripplePhase
         self.rippleAmplitude = rippleAmplitude
-
         #if os(iOS)
         self.baseImage = UIImage(named: imageName)?.cgImage
         #endif
@@ -510,9 +485,8 @@ private struct RefractedTextView: View {
             let imgW = CGFloat(baseImage.width)
             let imgH = CGFloat(baseImage.height)
 
-            // Compute aspect-fit rect of the image inside glassSize
+            // Aspect-fit rect of the image inside glassSize
             let scale = min(glassSize.width / imgW, glassSize.height / imgH)
-
             let targetW = imgW * scale
             let targetH = imgH * scale
             let fittedRect = CGRect(
@@ -522,39 +496,32 @@ private struct RefractedTextView: View {
                 height: targetH
             )
 
-            let sliceStep: CGFloat = 3
-            // Invert the outer transforms (scale around center + vertical/text offsets)
+            // Waterline transform: outer -> canvas space
             let centerY = glassSize.height / 2
             let canvasWaterline = centerY + (waterline - textOffset.height - centerY) / max(textScale, 0.0001)
             let clampedWaterline = max(fittedRect.minY, min(canvasWaterline, fittedRect.maxY))
-
             guard clampedWaterline <= fittedRect.maxY else { return }
 
-            // Align the seam to device pixels and bias slightly below the waterline to prevent above-seam bleed
+            // Pixel-aligned seam
             let pixel = 1.0 / max(displayScale, 1)
-            let seamY = ceil(clampedWaterline / pixel) * pixel // align to pixel without bias
+            let seamY = round(clampedWaterline / pixel) * pixel
+
+            // Cached constants for the frame
+            let sliceStep: CGFloat = 3
+            let invH = 1.0 / max(fittedRect.height, 1)
+            let sy = imgH / fittedRect.height
 
             context.withCGContext { cgContext in
-
-                let startY = seamY
-                let totalDepth = max(fittedRect.maxY - startY, 1)
-
-                // Map from fittedRect space to source image space
-                let sy = imgH / fittedRect.height
-
-                var y = max(startY, seamY)
+                var y = max(seamY, fittedRect.minY)
                 while y < fittedRect.maxY {
                     let bandHeight = min(sliceStep, fittedRect.maxY - y)
-                    let depthProgress = (y - startY) / totalDepth
-                    let phase = ripplePhase + Double(depthProgress) * 12.0
-                    let amplitude = rippleAmplitude
-                    let offset = CGFloat(sin(phase) * Double(amplitude))
 
-                    // Ensure the underwater text never fully disappears at the seam
-                    let minAlpha: CGFloat = 0.5
-                    let appliedAlpha = minAlpha + (1 - minAlpha)
+                    // Absolute Y parameterization (invariant to waterline)
+                    let absoluteProgress = (y - fittedRect.minY) * invH
+                    let phase = ripplePhase + Double(absoluteProgress) * 12.0
+                    let offset = CGFloat(sin(phase) * Double(rippleAmplitude))
 
-                    // Source slice in image coordinates
+                    // Source slice in image coords
                     let srcY = (y - fittedRect.minY) * sy
                     let srcH = bandHeight * sy
                     let sourceRect = CGRect(x: 0, y: srcY, width: imgW, height: srcH).integral
@@ -563,7 +530,7 @@ private struct RefractedTextView: View {
                         continue
                     }
 
-                    // Destination slice in fittedRect coordinates with horizontal ripple offset
+                    // Dest slice with horizontal ripple offset
                     let destRect = CGRect(x: fittedRect.minX + offset, y: y, width: fittedRect.width, height: bandHeight)
 
                     cgContext.saveGState()
@@ -573,8 +540,7 @@ private struct RefractedTextView: View {
                         width: fittedRect.width,
                         height: max(fittedRect.maxY - seamY, 0)
                     ))
-                    // Apply soft fade for the top band
-                    cgContext.setAlpha(appliedAlpha)
+                    cgContext.setAlpha(1.0)
                     cgContext.draw(slice, in: destRect)
                     cgContext.restoreGState()
 
@@ -599,7 +565,6 @@ private struct RefractedTextView: View {
 #if os(iOS)
 private final class MaskAnalyzer {
     static let shared = MaskAnalyzer()
-
     private(set) var bounds: MaskBounds?
 
     func prepare() -> Bool {
@@ -653,71 +618,9 @@ private final class MaskAnalyzer {
 
         guard let tRow = topRow, let bRow = bottomRow else { return nil }
         let denominator = max(height - 1, 1)
-
         let topFraction = 1 - CGFloat(tRow) / CGFloat(denominator)
         let bottomFraction = 1 - CGFloat(bRow) / CGFloat(denominator)
-
         return MaskBounds(emptyFraction: bottomFraction, fullFraction: topFraction)
-    }
-}
-
-private final class GlassWidthAnalyzer {
-    static let shared = GlassWidthAnalyzer()
-
-    private var cgImage: CGImage?
-    private let alphaThreshold: UInt8 = 10
-
-    init() {
-        if let ui = UIImage(named: "glass_mask")?.cgImage {
-            self.cgImage = ui
-        }
-    }
-
-    /// Returns the fraction (0..1) of the mask's opaque width at a given vertical fraction (0 is top, 1 is bottom).
-    func widthFraction(atYFraction yFrac: CGFloat) -> CGFloat? {
-        guard let cgImage else { return nil }
-        let width = cgImage.width
-        let bytesPerPixel = 4
-        let bytesPerRow = bytesPerPixel * width
-
-        guard let context = CGContext(
-            data: nil,
-            width: width,
-            height: 1,
-            bitsPerComponent: 8,
-            bytesPerRow: bytesPerRow,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
-
-        // Draw just the single row into the 1px-high context
-        context.interpolationQuality = .none
-        context.translateBy(x: 0, y: 1)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: 1), byTiling: false)
-
-        guard let data = context.data else { return nil }
-        let buffer = data.bindMemory(to: UInt8.self, capacity: width * bytesPerPixel)
-
-        var left: Int? = nil
-        var right: Int? = nil
-        for col in 0..<width {
-            let alpha = buffer[col * bytesPerPixel + 3]
-            if alpha > alphaThreshold {
-                left = col
-                break
-            }
-        }
-        for col in stride(from: width - 1, through: 0, by: -1) {
-            let alpha = buffer[col * bytesPerPixel + 3]
-            if alpha > alphaThreshold {
-                right = col
-                break
-            }
-        }
-        guard let l = left, let r = right, r >= l else { return 0 }
-        let opaqueWidth = r - l + 1
-        return CGFloat(opaqueWidth) / CGFloat(width)
     }
 }
 #endif
@@ -731,7 +634,6 @@ struct SplashView: View {
     var body: some View {
         ZStack {
             Color(.systemBlue)
-
             Image("drink_more_water")
                 .resizable()
                 .scaledToFit()
@@ -751,4 +653,3 @@ private struct NoHighlightButtonStyle: ButtonStyle {
         configuration.label
     }
 }
-
