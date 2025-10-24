@@ -198,6 +198,17 @@ private extension ContentView {
                 .accessibilityIdentifier("waterGlass")
         }
     }
+    
+    // Helper: mask aligned to glass + tweak
+    func glassMaskForOverlays(biasY: CGFloat = 0) -> some View {
+        let px = 1.0 / max(displayScale, 1)
+        let y = round((glassVerticalNudge + maskVerticalOffset + biasY) / px) * px
+        return Image("glass_mask")
+            .resizable()
+            .scaledToFit()
+            .frame(width: glassSize.width, height: glassSize.height)
+            .offset(x: maskHorizontalOffset, y: y)
+    }
 
     var glassVisual: some View {
         TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { _ in
@@ -251,7 +262,7 @@ private extension ContentView {
                     glassSize: glassSize,
                     verticalOffset: glassVerticalNudge,
                     waterTopY: waterTopAligned,
-                    baseColor: Color(.sRGB, red: 0.78, green: 0.88, blue: 0.98, opacity: 0.82),
+                    baseColor: Color(.sRGB, red: 0.78, green: 0.88, blue: 0.98, opacity: 0.42),
                     highlightColor: Color.white.opacity(0.9)
                 )
                 .mask(fillMask)
@@ -276,7 +287,25 @@ private extension ContentView {
                 .allowsHitTesting(false)
 
                 if showCalibration { calibrationOverlay.zIndex(1000) }
+                
+                let px = 1.0 / max(displayScale, 1)
+                let contentY = round(glassVerticalNudge / px) * px
 
+                // Raise positive bias, lower negative
+                let shimmerMaskBiasY: CGFloat = 0   // try 1 or -1 if off by a pixel
+
+                GlassLightShimmer(glassSize: glassSize)
+                    .offset(y: contentY)
+                    .mask(glassMaskForOverlays(biasY: shimmerMaskBiasY))
+                    .blendMode(.screen)
+                    .allowsHitTesting(false)
+
+                GlassInnerShadow(glassSize: glassSize)
+                    .offset(y: contentY)
+                    .mask(glassMaskForOverlays(biasY: shimmerMaskBiasY))
+                    .blendMode(.multiply)
+                    .allowsHitTesting(false)
+                
                 Image("empty_glass")
                     .resizable()
                     .scaledToFit()
@@ -625,6 +654,114 @@ private struct WaterSurfaceTexture: View {
         .frame(width: size.width, height: size.height)
     }
 }
+
+private struct GlassLightShimmer: View {
+    let glassSize: CGSize
+    var body: some View {
+        Canvas { ctx, size in
+            let r = CGRect(origin: .zero, size: size)
+
+            // Broad lateral gloss
+            let gloss = Gradient(stops: [
+                .init(color: .white.opacity(0.35), location: 0.18),
+                .init(color: .white.opacity(0.10), location: 0.58),
+                .init(color: .white.opacity(0.00), location: 0.95),
+            ])
+            ctx.fill(Path(r), with: .linearGradient(gloss,
+                startPoint: CGPoint(x: r.minX, y: r.midY),
+                endPoint:   CGPoint(x: r.maxX, y: r.midY)))
+
+            // Two vertical specular streaks
+            func streak(_ xFrac: CGFloat, widthFrac: CGFloat, alpha: Double, y0: CGFloat, y1: CGFloat) {
+                let w = r.width * widthFrac
+                let h = r.height * (y1 - y0)
+                let x = r.minX + r.width * xFrac - w/2
+                let y = r.minY + r.height * y0
+                let rr = CGRect(x: x, y: y, width: w, height: h)
+                let g = Gradient(stops: [
+                    .init(color: .white.opacity(0.00), location: 0.00),
+                    .init(color: .white.opacity(alpha), location: 0.50),
+                    .init(color: .white.opacity(0.00), location: 1.00),
+                ])
+                ctx.fill(Path(roundedRect: rr, cornerRadius: w/2),
+                         with: .linearGradient(g,
+                            startPoint: CGPoint(x: rr.minX, y: rr.midY),
+                            endPoint:   CGPoint(x: rr.maxX, y: rr.midY)))
+            }
+
+            streak(0.30, widthFrac: 0.055, alpha: 0.38, y0: 0.16, y1: 0.76)
+            streak(0.66, widthFrac: 0.040, alpha: 0.22, y0: 0.22, y1: 0.72)
+
+            // Soft rim highlight (top ellipse stroke, near side brighter)
+            let rimInsetX = r.width * 0.06
+            let rimInsetY = r.height * 0.06
+            let rimRect = r.insetBy(dx: rimInsetX, dy: rimInsetY)
+            let ellipse = Path(ellipseIn: rimRect)
+
+            // Near half bright
+            ctx.drawLayer { layer in
+                layer.clip(to: Path(CGRect(x: r.minX, y: r.midY, width: r.width, height: r.height/2)))
+                layer.stroke(ellipse, with: .color(.white.opacity(0.28)),
+                             lineWidth: max(1, r.height * 0.035))
+            }
+            // Far half subtle
+            ctx.drawLayer { layer in
+                layer.clip(to: Path(CGRect(x: r.minX, y: r.minY, width: r.width, height: r.height/2)))
+                layer.stroke(ellipse, with: .color(.white.opacity(0.10)),
+                             lineWidth: max(1, r.height * 0.025))
+            }
+        }
+        .frame(width: glassSize.width, height: glassSize.height)
+    }
+}
+
+private struct GlassInnerShadow: View {
+    let glassSize: CGSize
+    var body: some View {
+        Canvas { ctx, size in
+            let r = CGRect(origin: .zero, size: size)
+
+            // Side vignette to add depth
+            let edgeW = max(1, r.width * 0.10)
+            let leftRect  = CGRect(x: r.minX, y: r.minY, width: edgeW, height: r.height)
+            let rightRect = CGRect(x: r.maxX - edgeW, y: r.minY, width: edgeW, height: r.height)
+
+            let leftGrad = Gradient(stops: [
+                .init(color: .black.opacity(0.18), location: 0.00),
+                .init(color: .black.opacity(0.00), location: 1.00),
+            ])
+            let rightGrad = Gradient(stops: [
+                .init(color: .black.opacity(0.18), location: 1.00),
+                .init(color: .black.opacity(0.00), location: 0.00),
+            ])
+
+            ctx.fill(Path(leftRect),
+                     with: .linearGradient(leftGrad,
+                        startPoint: CGPoint(x: leftRect.minX, y: leftRect.midY),
+                        endPoint:   CGPoint(x: leftRect.maxX, y: leftRect.midY)))
+
+            ctx.fill(Path(rightRect),
+                     with: .linearGradient(rightGrad,
+                        startPoint: CGPoint(x: rightRect.minX, y: rightRect.midY),
+                        endPoint:   CGPoint(x: rightRect.maxX, y: rightRect.midY)))
+
+            // Bottom fade for thickness
+            let bottomH = r.height * 0.10
+            let bottomRect = CGRect(x: r.minX, y: r.maxY - bottomH, width: r.width, height: bottomH)
+            let bottomGrad = Gradient(stops: [
+                .init(color: .black.opacity(0.16), location: 1.00),
+                .init(color: .black.opacity(0.00), location: 0.00),
+            ])
+            ctx.fill(Path(bottomRect),
+                     with: .linearGradient(bottomGrad,
+                        startPoint: CGPoint(x: bottomRect.midX, y: bottomRect.maxY),
+                        endPoint:   CGPoint(x: bottomRect.midX, y: bottomRect.minY)))
+        }
+        .frame(width: glassSize.width, height: glassSize.height)
+        .opacity(0.6) // reduce if too strong
+    }
+}
+
 
 // MARK: - Water fill (driven by waterTopY)
 private struct WaterFillRenderer: View {
