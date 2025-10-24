@@ -192,22 +192,22 @@ private extension ContentView {
             // Respect Silent Mode, allow mixing
             try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
             try? AVAudioSession.sharedInstance().setActive(true, options: [])
-            preloadSplash()
+            preloadPour()
         }
 
-        private func preloadSplash() {
+        private func preloadPour() {
             let bundle = Bundle.main
             // Works whether "Sounds" is a real folder (blue) or just a group (yellow)
             let url =
-                bundle.url(forResource: "water-splash", withExtension: "caf", subdirectory: "Sounds") ??
-                bundle.url(forResource: "water-splash", withExtension: "caf")
+                bundle.url(forResource: "water-pour2", withExtension: "caf", subdirectory: "Sounds") ??
+                bundle.url(forResource: "water-pour2", withExtension: "caf")
             guard let url else { return }
             splashPlayer = try? AVAudioPlayer(contentsOf: url)
             splashPlayer?.prepareToPlay()
         }
 
         func playSplash() {
-            if splashPlayer == nil { preloadSplash() }
+            if splashPlayer == nil { preloadPour() }
             splashPlayer?.stop()
             splashPlayer?.currentTime = 0
             splashPlayer?.play()
