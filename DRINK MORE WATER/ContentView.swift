@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreGraphics
+import AVFoundation
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -46,6 +47,8 @@ struct ContentView: View {
     private let maskVerticalOffset: CGFloat = 5
     private let maskHorizontalOffset: CGFloat = 2
     private let uiTestButtonFlag = "-UITestsForceButton"
+    
+    private let sfx = SoundFX.shared
 
     private var fillFraction: CGFloat {
         let bounds = maskBounds
@@ -64,6 +67,7 @@ struct ContentView: View {
         guard let step = viewModel.nextIntakeStep() else { return }
         surfacePulseStart = Date.timeIntervalSinceReferenceDate
         haptics.impactLight()
+        sfx.playSplash()
         withAnimation(.easeInOut(duration: 0.25)) { viewModel.intakeOz = step.newValue }
         if step.reachedGoal { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { playSuccessHaptic() } }
         if viewModel.lastIntakeDateString.isEmpty { viewModel.lastIntakeDateString = todayString() }
@@ -178,6 +182,36 @@ private extension ContentView {
         }
         #endif
         return 88.0 / 480.0
+    }
+    
+    private final class SoundFX {
+        static let shared = SoundFX()
+        private var splashPlayer: AVAudioPlayer?
+
+        private init() {
+            // Respect Silent Mode, allow mixing
+            try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+            try? AVAudioSession.sharedInstance().setActive(true, options: [])
+            preloadSplash()
+        }
+
+        private func preloadSplash() {
+            let bundle = Bundle.main
+            // Works whether "Sounds" is a real folder (blue) or just a group (yellow)
+            let url =
+                bundle.url(forResource: "water-splash", withExtension: "caf", subdirectory: "Sounds") ??
+                bundle.url(forResource: "water-splash", withExtension: "caf")
+            guard let url else { return }
+            splashPlayer = try? AVAudioPlayer(contentsOf: url)
+            splashPlayer?.prepareToPlay()
+        }
+
+        func playSplash() {
+            if splashPlayer == nil { preloadSplash() }
+            splashPlayer?.stop()
+            splashPlayer?.currentTime = 0
+            splashPlayer?.play()
+        }
     }
 
     @ViewBuilder
@@ -394,7 +428,7 @@ private extension ContentView {
                 verticalNudge: glassVerticalNudge,
                 waterline: underwaterStartY,
                 ripplePhase: ripplePhase,
-                rippleAmplitude: 7
+                rippleAmplitude: 4
             )
             .mask(glassMask())
             .transaction { $0.animation = nil }
