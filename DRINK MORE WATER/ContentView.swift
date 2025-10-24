@@ -11,6 +11,7 @@ import AVFoundation
 #if canImport(UIKit)
 import UIKit
 #endif
+import UserNotifications
 
 struct ContentView: View {
     private let haptics = HapticsFactory.default()
@@ -24,6 +25,12 @@ struct ContentView: View {
     @State private var showCalibration: Bool = false
     @State private var calTopY: CGFloat = 0
     @State private var calBottomY: CGFloat = 0
+
+    // Notification settings (persisted)
+    @AppStorage("notifStartHour") private var notifStartHour: Int = 7    // 7 AM
+    @AppStorage("notifEndHour") private var notifEndHour: Int = 22       // 10 PM
+    @AppStorage("notifSoundFile") private var notifSoundFile: String = "drink more water"
+    @State private var showNotificationSettings: Bool = false
 
     // Mask calibration (MaskAnalyzer space: 1 = top, 0 = bottom)
     private let calibratedFullFraction: CGFloat = 1.0 - 0.198522622345337
@@ -56,6 +63,7 @@ struct ContentView: View {
     private let uiTestButtonFlag = "-UITestsForceButton"
     
     private let sfx = SoundFX.shared
+    private let notificationScheduler = NotificationScheduler.shared
 
     private var fillFraction: CGFloat {
         let bounds = maskBounds
@@ -76,6 +84,15 @@ struct ContentView: View {
         haptics.impactLight()
         sfx.playSplash()
         viewModel.intakeOz = step.newValue
+
+        // Reschedule notifications to be 1 hour from now and then hourly within the window
+        notificationScheduler.scheduleForTodayAndTomorrow(
+            startHour: notifStartHour,
+            endHour: notifEndHour,
+            soundFile: notifSoundFile,
+            lastDrinkDate: Date()
+        )
+
         if step.reachedGoal { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { playSuccessHaptic() } }
         if viewModel.lastIntakeDateString.isEmpty { viewModel.lastIntakeDateString = todayString() }
     }
@@ -118,7 +135,7 @@ struct ContentView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            Button { showResetConfirmation = true } label: {
+            Button { showNotificationSettings = true } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(.white)
@@ -150,6 +167,26 @@ struct ContentView: View {
                 viewModel.lastIntakeDateString = todayString()
             }
         } message: { Text("This will set today's filled amount back to 0 oz.") }
+        .sheet(isPresented: $showNotificationSettings) {
+            NotificationSettingsView(
+                startHour: $notifStartHour,
+                endHour: $notifEndHour,
+                selectedSound: $notifSoundFile,
+                onApply: {
+                    // Re-schedule notifications using current or last drink time
+                    let lastDrinkDate = Date() // use now as baseline when changing settings
+                    notificationScheduler.scheduleForTodayAndTomorrow(
+                        startHour: notifStartHour,
+                        endHour: notifEndHour,
+                        soundFile: notifSoundFile,
+                        lastDrinkDate: lastDrinkDate
+                    )
+                },
+                onResetToday: {
+                    showResetConfirmation = true
+                }
+            )
+        }
         .onAppear {
             viewModel.resetIfNeeded()
             let innerHeight = glassSize.height - 163
@@ -170,6 +207,24 @@ struct ContentView: View {
             levelAnimFrom = cur
             levelAnimTo = cur
             levelAnimStart = nil
+            
+            // Notifications: request auth and schedule initial plan for today & tomorrow
+            Task { @MainActor in
+                await notificationScheduler.requestAuthorization()
+                let lastDrink: Date? = {
+                    // If lastIntakeDateString is today and intake > 0, treat as last drink at now for initial schedule
+                    if !viewModel.lastIntakeDateString.isEmpty {
+                        return Date()
+                    }
+                    return nil
+                }()
+                notificationScheduler.scheduleForTodayAndTomorrow(
+                    startHour: notifStartHour,
+                    endHour: notifEndHour,
+                    soundFile: notifSoundFile,
+                    lastDrinkDate: lastDrink
+                )
+            }
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
@@ -179,6 +234,30 @@ struct ContentView: View {
                 let t = Date.timeIntervalSinceReferenceDate
                 frozenPhase = Self.rippleSeed + t * waveSpeed
             }
+        }
+        .onChange(of: notifStartHour) { _, _ in
+            notificationScheduler.scheduleForTodayAndTomorrow(
+                startHour: notifStartHour,
+                endHour: notifEndHour,
+                soundFile: notifSoundFile,
+                lastDrinkDate: Date()
+            )
+        }
+        .onChange(of: notifEndHour) { _, _ in
+            notificationScheduler.scheduleForTodayAndTomorrow(
+                startHour: notifStartHour,
+                endHour: notifEndHour,
+                soundFile: notifSoundFile,
+                lastDrinkDate: Date()
+            )
+        }
+        .onChange(of: notifSoundFile) { _, _ in
+            notificationScheduler.scheduleForTodayAndTomorrow(
+                startHour: notifStartHour,
+                endHour: notifEndHour,
+                soundFile: notifSoundFile,
+                lastDrinkDate: Date()
+            )
         }
         // Start a new 1.0 s ramp whenever the model fraction changes
         .onChange(of: fillFraction) { _, new in
@@ -1077,6 +1156,240 @@ private struct RefractedTextView: View {
     }
 }
 
+private final class NotificationScheduler {
+    static let shared = NotificationScheduler()
+
+    func requestAuthorization() async {
+        let center = UNUserNotificationCenter.current()
+        _ = try? await center.requestAuthorization(options: [.alert, .badge, .sound])
+    }
+
+    /// Clears pending notifications and schedules for today and tomorrow based on settings and last drink time.
+    /// - Parameters:
+    ///   - startHour: first hour (0-23) to allow notifications
+    ///   - endHour: last hour (0-23) to allow notifications
+    ///   - soundFile: bundle sound filename (e.g., "drink more water.caf")
+    ///   - lastDrinkDate: if provided, first notification is 1 hour after this time (clamped to window)
+    func scheduleForTodayAndTomorrow(startHour: Int, endHour: Int, soundFile: String, lastDrinkDate: Date?) {
+        let center = UNUserNotificationCenter.current()
+        center.removeAllPendingNotificationRequests()
+        // Reset badge count; we will increment on each scheduled request index
+        DispatchQueue.main.async { UIApplication.shared.applicationIconBadgeNumber = 0 }
+
+        let calendar = Calendar.current
+        let now = Date()
+
+        // Helper to build hourly times within window for a given day reference
+        func hourlyTimes(for day: Date, startHour: Int, endHour: Int) -> [Date] {
+            guard let start = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: day),
+                  let end = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: day) else { return [] }
+            var times: [Date] = []
+            var t = start
+            while t <= end {
+                times.append(t)
+                t = calendar.date(byAdding: .hour, value: 1, to: t) ?? t.addingTimeInterval(3600)
+            }
+            return times
+        }
+
+        func nextRoundedHour(after date: Date) -> Date {
+            let comps = calendar.dateComponents([.year, .month, .day, .hour], from: date)
+            let base = calendar.date(from: comps) ?? date
+            return calendar.date(byAdding: .hour, value: 1, to: base) ?? date.addingTimeInterval(3600)
+        }
+
+        // Determine first fire for today based on lastDrinkDate
+        var todayTimes = hourlyTimes(for: now, startHour: startHour, endHour: endHour)
+        var firstFromDrink: Date? = nil
+        if let ld = lastDrinkDate {
+            let candidate = ld.addingTimeInterval(3600)
+            // Clamp to window: if before startHour, move to start; if after endHour, none today
+            if let startWindow = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: now),
+               let endWindow = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: now) {
+                if candidate < startWindow { firstFromDrink = startWindow }
+                else if candidate <= endWindow { firstFromDrink = candidate }
+            }
+        }
+
+        // Filter todayTimes based on now and firstFromDrink logic
+        let filteredToday: [Date] = {
+            if let first = firstFromDrink {
+                // Start at 1h after drink, then hourly to end
+                var arr: [Date] = []
+                var t = nextRoundedHour(after: first.addingTimeInterval(-1)) // align to the next whole hour after first
+                if t < first { t = first }
+                // Include the exact first reminder at first (even if not on whole hour)
+                arr.append(first)
+                while true {
+                    if let endWindow = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: now), t > endWindow { break }
+                    if t > first { arr.append(t) }
+                    t = calendar.date(byAdding: .hour, value: 1, to: t) ?? t.addingTimeInterval(3600)
+                }
+                return arr.filter { $0 > now }
+            } else {
+                // No drink yet: hourly from the next window time after now
+                return todayTimes.filter { $0 > now }
+            }
+        }()
+
+        // Build tomorrow schedule: hourly within window (restart at midnight)
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now.addingTimeInterval(86400)
+        let tomorrowTimes = hourlyTimes(for: tomorrow, startHour: startHour, endHour: endHour)
+
+        // Resolve a base name (no extension) to an actual bundle resource filename
+        func resolveSoundFilename(baseName: String) -> String? {
+            if baseName.isEmpty { return nil }
+            let fm = FileManager.default
+            let exts = ["caf", "aiff", "wav"]
+
+            func search(in path: String) -> String? {
+                guard let items = try? fm.contentsOfDirectory(atPath: path) else { return nil }
+                // Prefer extensions in the given order
+                for ext in exts {
+                    if let match = items.first(where: { ($0 as NSString).deletingPathExtension.caseInsensitiveCompare(baseName) == .orderedSame && ($0 as NSString).pathExtension.lowercased() == ext }) {
+                        return match
+                    }
+                }
+                // Fallback: any matching base name regardless of extension
+                if let any = items.first(where: { ($0 as NSString).deletingPathExtension.caseInsensitiveCompare(baseName) == .orderedSame }) {
+                    return any
+                }
+                return nil
+            }
+
+            if let base = Bundle.main.resourcePath {
+                let soundsPath = (base as NSString).appendingPathComponent("Sounds")
+                if let fromSounds = search(in: soundsPath) { return fromSounds }
+                if let fromRoot = search(in: base) { return fromRoot }
+            }
+            return nil
+        }
+
+        let resolvedName = resolveSoundFilename(baseName: soundFile)
+        let sound: UNNotificationSound? = {
+            if let name = resolvedName { return UNNotificationSound(named: UNNotificationSoundName(name)) }
+            return .default
+        }()
+
+        // Create content factory
+        func content(badge: Int) -> UNMutableNotificationContent {
+            let c = UNMutableNotificationContent()
+            c.title = "Drink more water"
+            c.body = "Tap the glass when you've had a drink."
+            c.sound = sound // normal notifications obey Silent and Focus
+            c.badge = NSNumber(value: badge)
+            return c
+        }
+
+        var badgeCount = 0
+        func schedule(date: Date, id: String) {
+            badgeCount += 1
+            let comps = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+            let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+            let request = UNNotificationRequest(identifier: id, content: content(badge: badgeCount), trigger: trigger)
+            center.add(request)
+        }
+
+        // Schedule today's
+        for (idx, t) in filteredToday.enumerated() {
+            schedule(date: t, id: "today_\(idx)")
+        }
+        // Schedule tomorrow's
+        for (idx, t) in tomorrowTimes.enumerated() {
+            schedule(date: t, id: "tomorrow_\(idx)")
+        }
+    }
+}
+
+private struct NotificationSettingsView: View {
+    @Binding var startHour: Int
+    @Binding var endHour: Int
+    @Binding var selectedSound: String
+    var onApply: () -> Void
+    var onResetToday: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Notification Window")) {
+                    Picker("Start", selection: $startHour) {
+                        ForEach(0..<24, id: \.self) { h in
+                            Text(hourLabel(h)).tag(h)
+                        }
+                    }
+                    Picker("End", selection: $endHour) {
+                        ForEach(0..<24, id: \.self) { h in
+                            Text(hourLabel(h)).tag(h)
+                        }
+                    }
+                    Text("Notifications will occur only between the start and end hours.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section(header: Text("Sound")) {
+                    Picker("Sound", selection: $selectedSound) {
+                        ForEach(availableSoundsBaseNames(), id: \.self) { name in
+                            Text(name).tag(name)
+                        }
+                    }
+                    Text("Sounds are loaded from the Sounds folder in the app bundle.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    Button(role: .destructive) {
+                        onResetToday()
+                    } label: {
+                        Text("Reset today's intake")
+                    }
+                }
+            }
+            .navigationTitle("Notifications")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Apply") {
+                        onApply()
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private func hourLabel(_ hour24: Int) -> String {
+        let h = ((hour24 + 11) % 12) + 1 // 0->12, 13->1
+        let isPM = hour24 >= 12
+        return "\(h) \(isPM ? "PM" : "AM")"
+    }
+
+    private func availableSoundsBaseNames() -> [String] {
+        var set = Set<String>()
+        let fm = FileManager.default
+        func add(from path: String) {
+            if let items = try? fm.contentsOfDirectory(atPath: path) {
+                for item in items where item.lowercased().hasSuffix(".caf") || item.lowercased().hasSuffix(".aiff") || item.lowercased().hasSuffix(".wav") {
+                    let base = (item as NSString).deletingPathExtension
+                    set.insert(base)
+                }
+            }
+        }
+        if let base = Bundle.main.resourcePath {
+            add(from: base)
+            let soundsPath = (base as NSString).appendingPathComponent("Sounds")
+            add(from: soundsPath)
+        }
+        if set.isEmpty { set.insert("drink more water") }
+        return Array(set).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+}
+
 #if os(iOS)
 private final class MaskAnalyzer {
     static let shared = MaskAnalyzer()
@@ -1208,5 +1521,4 @@ struct SplashView: View {
 private struct NoHighlightButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View { configuration.label }
 }
-
 
