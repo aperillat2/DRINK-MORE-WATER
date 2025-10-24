@@ -4,7 +4,9 @@
 //
 //  Created by AARON PERILLAT on 10/22/25.
 //
+
 import SwiftUI
+import CoreGraphics
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -15,6 +17,7 @@ struct ContentView: View {
     @StateObject private var viewModel = WaterIntakeViewModel()
     @Environment(\.scenePhase) private var scenePhase
     @State private var showResetConfirmation: Bool = false
+    private let rippleSeed = Double.random(in: 0...(2 * .pi))
 
     private let glassSize = CGSize(width: 551, height: 722)
     private let glassVerticalNudge: CGFloat = -20
@@ -169,25 +172,37 @@ private extension ContentView {
     }
 
     var glassVisual: some View {
-        ZStack {
-            Image("glass_text")
-                .resizable()
-                .scaledToFit()
-                .frame(width: glassSize.width, height: glassSize.height)
-                .scaleEffect(textScale)
-                .offset(y: glassVerticalNudge)
-                .offset(x: textOffset.width, y: textOffset.height)
-                .accessibilityHidden(true)
+        TimelineView(.animation) { timeline in
+            let timestamp = timeline.date.timeIntervalSinceReferenceDate
+            let fraction = max(0, min(fillFraction, 1))
+            let ripplePhase = rippleSeed + timestamp * (1.2 + Double(fraction) * 0.8)
 
-            glassMaskedWater()
+            // Debug waterline positions (in glass coordinate space)
+            let clampedFraction = fraction
+            // Removed unused globalWaterline line here as per instructions
+
+            ZStack {
+                refractedGlassText(fraction: fraction, ripplePhase: ripplePhase)
+                    .allowsHitTesting(false)
+
+                WaterFillRenderer(
+                    glassSize: glassSize,
+                    verticalOffset: glassVerticalNudge,
+                    fillFraction: fraction,
+                    ripplePhase: ripplePhase,
+                    baseColor: Color(.sRGB, red: 0.78, green: 0.88, blue: 0.98, opacity: 0.82),
+                    highlightColor: Color.white.opacity(0.9)
+                )
                 .allowsHitTesting(false)
+                .mask(glassMask())
 
-            Image("empty_glass")
-                .resizable()
-                .scaledToFit()
-                .frame(width: glassSize.width, height: glassSize.height)
-                .offset(y: glassVerticalNudge)
-                .accessibilityHidden(true)
+                Image("empty_glass")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: glassSize.width, height: glassSize.height)
+                    .offset(y: glassVerticalNudge)
+                    .accessibilityHidden(true)
+            }
         }
     }
 
@@ -211,63 +226,259 @@ private extension ContentView {
             .offset(x: maskHorizontalOffset, y: glassVerticalNudge + maskVerticalOffset)
     }
 
-    func glassMaskedWater() -> some View {
-        let fillHeight = max(0, glassSize.height * fillFraction)
-        let surfaceWidth = glassSize.width * (0.34 + (0.64 - 0.34) * fillFraction)
-        let surfaceHeight = max(12, 18 + (28 - 18) * fillFraction)
-        let surfaceY = glassSize.height - fillHeight
+    func refractedGlassText(fraction: CGFloat, ripplePhase: Double) -> some View {
+        let clampedFraction = max(0, min(fraction, 1))
+        let globalWaterline = max(0, min(glassSize.height, glassSize.height * (1 - clampedFraction)))
+        let localWaterline = max(0, min(glassSize.height, globalWaterline - textOffset.height))
+        let amplitude = refractedAmplitude(for: clampedFraction)
+        let refractionActivationFraction: CGFloat = 0.23
+        let shouldRenderRefraction = clampedFraction >= refractionActivationFraction
 
         return ZStack {
-            VStack(spacing: 0) {
-                Spacer()
-                LinearGradient(colors: [Color.white.opacity(0.80), Color.white.opacity(0.75)], startPoint: .top, endPoint: .bottom)
-                    .frame(width: glassSize.width, height: fillHeight)
-                    .overlay(
-                        LinearGradient(colors: [Color.white.opacity(0.06), .clear, Color.white.opacity(0.04)], startPoint: .leading, endPoint: .trailing)
-                    )
-                    .blur(radius: 0.2)
-            }
+            Image("glass_text")
+                .resizable()
+                .scaledToFit()
+                .frame(width: glassSize.width, height: glassSize.height)
+                .scaleEffect(textScale)
+                .offset(y: glassVerticalNudge)
+                .offset(x: textOffset.width, y: textOffset.height)
+                .mask(
+                    Rectangle()
+                        .frame(width: glassSize.width, height: localWaterline)
+                        .offset(y: glassVerticalNudge + textOffset.height - glassSize.height / 2 + localWaterline / 2)
+                )
+                .accessibilityHidden(true)
 
-            if fillHeight > 0 {
-                WaterSurfaceGraphic(width: surfaceWidth, height: surfaceHeight)
-                    .frame(width: surfaceWidth, height: surfaceHeight)
-                    .position(x: glassSize.width / 2, y: surfaceY)
+            if shouldRenderRefraction {
+                RefractedTextView(
+                    imageName: "glass_text",
+                    glassSize: glassSize,
+                    textScale: textScale,
+                    textOffset: textOffset,
+                    verticalNudge: glassVerticalNudge,
+                    waterline: globalWaterline,
+                    ripplePhase: ripplePhase,
+                    rippleAmplitude: amplitude
+                )
+                .mask(glassMask())
+                .accessibilityHidden(true)
             }
         }
-        .frame(width: glassSize.width, height: glassSize.height)
-        .offset(y: glassVerticalNudge)
-        .mask(glassMask())
+    }
+
+    private func refractedAmplitude(for fraction: CGFloat) -> CGFloat {
+        7
     }
 }
 
-private struct WaterSurfaceGraphic: View {
-    let width: CGFloat
-    let height: CGFloat
+private struct WaterFillRenderer: View {
+    let glassSize: CGSize
+    let verticalOffset: CGFloat
+    let fillFraction: CGFloat
+    let ripplePhase: Double
+    let baseColor: Color
+    let highlightColor: Color
 
     var body: some View {
-        let innerWidth = width * 0.92
-        let innerHeight = height * 0.82
-        let outerStrokeWidth = max(1, width * 0.003)
-        let innerStrokeWidth = max(0.5, width * 0.0015)
+        Canvas { context, size in
+            let fraction = max(0, min(fillFraction, 1))
+            let width = size.width
+            let height = size.height
+            let waterHeight = height * fraction
+            guard waterHeight > 1 else { return }
 
-        return ZStack {
-            Ellipse()
-                .fill(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.65), Color.white.opacity(0.85)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .overlay(
-                    Ellipse()
-                        .stroke(Color.white.opacity(0.95), lineWidth: outerStrokeWidth)
-                )
-            Ellipse()
-                .stroke(Color.white.opacity(0.5), lineWidth: innerStrokeWidth)
-                .frame(width: innerWidth, height: innerHeight)
+            let waterRect = CGRect(
+                x: 0,
+                y: height - waterHeight,
+                width: width,
+                height: waterHeight
+            )
+
+            drawBaseGradient(context: &context, rect: waterRect, width: width)
         }
-        .blur(radius: 0.35)
+        .frame(width: glassSize.width, height: glassSize.height)
+        .offset(y: verticalOffset)
+    }
+
+    private func drawBaseGradient(context: inout GraphicsContext, rect: CGRect, width: CGFloat) {
+        let gradient = Gradient(stops: [
+            .init(color: baseColorMix(lighten: 0.35).opacity(0.88), location: 0),
+            .init(color: baseColor.opacity(0.82), location: 0.5),
+            .init(color: baseColorMix(lighten: 0.55).opacity(0.76), location: 1)
+        ])
+
+        context.fill(
+            Path(rect),
+            with: .linearGradient(
+                gradient,
+                startPoint: CGPoint(x: width * 0.3, y: rect.minY),
+                endPoint: CGPoint(x: width * 0.7, y: rect.maxY)
+            )
+        )
+    }
+
+    private func baseColorMix(lighten amount: Double) -> Color {
+        let clamped = min(max(amount, -1), 1)
+        if clamped == 0 { return baseColor }
+        let target: Color = clamped > 0 ? .white : .black
+        return baseColor.mix(with: target, fraction: abs(clamped))
+    }
+}
+
+private extension Color {
+    func mix(with color: Color, fraction: Double) -> Color {
+        let fraction = min(max(fraction, 0), 1)
+        #if canImport(UIKit)
+        let primary = UIColor(self)
+        let secondary = UIColor(color)
+
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+        primary.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+        secondary.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+
+        let r = r1 + (r2 - r1) * fraction
+        let g = g1 + (g2 - g1) * fraction
+        let b = b1 + (b2 - b1) * fraction
+        let a = a1 + (a2 - a1) * fraction
+        return Color(red: Double(r), green: Double(g), blue: Double(b), opacity: Double(a))
+        #else
+        return self
+        #endif
+    }
+}
+
+private struct RefractedTextView: View {
+    let imageName: String
+    let glassSize: CGSize
+    let textScale: CGFloat
+    let textOffset: CGSize
+    let verticalNudge: CGFloat
+    let waterline: CGFloat
+    let ripplePhase: Double
+    let rippleAmplitude: CGFloat
+
+    @Environment(\.displayScale) private var displayScale: CGFloat
+
+    #if os(iOS)
+    private let baseImage: CGImage?
+    #endif
+
+    init(
+        imageName: String,
+        glassSize: CGSize,
+        textScale: CGFloat,
+        textOffset: CGSize,
+        verticalNudge: CGFloat,
+        waterline: CGFloat,
+        ripplePhase: Double,
+        rippleAmplitude: CGFloat
+    ) {
+        self.imageName = imageName
+        self.glassSize = glassSize
+        self.textScale = textScale
+        self.textOffset = textOffset
+        self.verticalNudge = verticalNudge
+        self.waterline = waterline
+        self.ripplePhase = ripplePhase
+        self.rippleAmplitude = rippleAmplitude
+
+        #if os(iOS)
+        self.baseImage = UIImage(named: imageName)?.cgImage
+        #endif
+    }
+
+    var body: some View {
+        Canvas { context, _ in
+            #if os(iOS)
+            guard let baseImage else { return }
+
+            let imgW = CGFloat(baseImage.width)
+            let imgH = CGFloat(baseImage.height)
+
+            // Compute aspect-fit rect of the image inside glassSize
+            let scale = min(glassSize.width / imgW, glassSize.height / imgH)
+
+            let targetW = imgW * scale
+            let targetH = imgH * scale
+            let fittedRect = CGRect(
+                x: (glassSize.width - targetW) / 2,
+                y: (glassSize.height - targetH) / 2,
+                width: targetW,
+                height: targetH
+            )
+
+            let sliceStep: CGFloat = 3
+            // Invert the outer transforms (scale around center + vertical/text offsets)
+            let centerY = glassSize.height / 2
+            let canvasWaterline = centerY + (waterline - textOffset.height - centerY) / max(textScale, 0.0001)
+            let clampedWaterline = max(fittedRect.minY, min(canvasWaterline, fittedRect.maxY))
+
+            guard clampedWaterline <= fittedRect.maxY else { return }
+
+            // Align the seam to device pixels and bias slightly below the waterline to prevent above-seam bleed
+            let pixel = 1.0 / max(displayScale, 1)
+            let seamY = ceil(clampedWaterline / pixel) * pixel // align to pixel without bias
+
+            context.withCGContext { cgContext in
+
+                let startY = seamY
+                let totalDepth = max(fittedRect.maxY - startY, 1)
+
+                // Map from fittedRect space to source image space
+                let sy = imgH / fittedRect.height
+
+                var y = max(startY, seamY)
+                while y < fittedRect.maxY {
+                    let bandHeight = min(sliceStep, fittedRect.maxY - y)
+                    let depthProgress = (y - startY) / totalDepth
+                    let phase = ripplePhase + Double(depthProgress) * 12.0
+                    let amplitude = rippleAmplitude
+                    let offset = CGFloat(sin(phase) * Double(amplitude))
+
+                    // Ensure the underwater text never fully disappears at the seam
+                    let minAlpha: CGFloat = 0.5
+                    let appliedAlpha = minAlpha + (1 - minAlpha)
+
+                    // Source slice in image coordinates
+                    let srcY = (y - fittedRect.minY) * sy
+                    let srcH = bandHeight * sy
+                    let sourceRect = CGRect(x: 0, y: srcY, width: imgW, height: srcH).integral
+                    guard let slice = baseImage.cropping(to: sourceRect) else {
+                        y += sliceStep
+                        continue
+                    }
+
+                    // Destination slice in fittedRect coordinates with horizontal ripple offset
+                    let destRect = CGRect(x: fittedRect.minX + offset, y: y, width: fittedRect.width, height: bandHeight)
+
+                    cgContext.saveGState()
+                    cgContext.clip(to: CGRect(
+                        x: fittedRect.minX,
+                        y: seamY,
+                        width: fittedRect.width,
+                        height: max(fittedRect.maxY - seamY, 0)
+                    ))
+                    // Apply soft fade for the top band
+                    cgContext.setAlpha(appliedAlpha)
+                    cgContext.draw(slice, in: destRect)
+                    cgContext.restoreGState()
+
+                    y += sliceStep
+                }
+            }
+            #else
+            let resolved = context.resolve(Image(imageName))
+            context.draw(resolved, in: CGRect(origin: .zero, size: glassSize))
+            #endif
+        }
+        .frame(width: glassSize.width, height: glassSize.height)
+        .scaleEffect(textScale)
+        .offset(y: verticalNudge)
+        .offset(x: textOffset.width, y: textOffset.height)
+        .blur(radius: 0.4)
+        .opacity(0.9)
+        .accessibilityHidden(true)
     }
 }
 
