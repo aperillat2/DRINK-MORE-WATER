@@ -71,12 +71,7 @@ struct ContentView: View {
         viewModel.intakeOz = step.newValue
 
         // Reschedule notifications to be 1 hour from now and then hourly within the window
-        notificationScheduler.scheduleForTodayAndTomorrow(
-            startHour: notifStartHour,
-            endHour: notifEndHour,
-            soundFile: notifSoundFile,
-            lastDrinkDate: Date()
-        )
+        rescheduleNotifications(lastDrinkDate: Date())
 
         if step.reachedGoal { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { playSuccessHaptic() } }
         if viewModel.lastIntakeDateString.isEmpty { viewModel.lastIntakeDateString = todayString() }
@@ -145,17 +140,12 @@ struct ContentView: View {
                 onApply: {
                     // Re-schedule notifications using current or last drink time
                     let lastDrinkDate = Date() // use now as baseline when changing settings
-                    notificationScheduler.scheduleForTodayAndTomorrow(
-                        startHour: notifStartHour,
-                        endHour: notifEndHour,
-                        soundFile: notifSoundFile,
-                        lastDrinkDate: lastDrinkDate
-                    )
+                    rescheduleNotifications(lastDrinkDate: lastDrinkDate)
                 },
-                onResetToday: {
-                    showResetConfirmation = true
-                }
-            )
+        onResetToday: {
+            showResetConfirmation = true
+        }
+    )
         }
         .onAppear {
             viewModel.resetIfNeeded()
@@ -172,12 +162,7 @@ struct ContentView: View {
                     }
                     return nil
                 }()
-                notificationScheduler.scheduleForTodayAndTomorrow(
-                    startHour: notifStartHour,
-                    endHour: notifEndHour,
-                    soundFile: notifSoundFile,
-                    lastDrinkDate: lastDrink
-                )
+                rescheduleNotifications(lastDrinkDate: lastDrink)
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -190,28 +175,13 @@ struct ContentView: View {
             }
         }
         .onChange(of: notifStartHour) { _, _ in
-            notificationScheduler.scheduleForTodayAndTomorrow(
-                startHour: notifStartHour,
-                endHour: notifEndHour,
-                soundFile: notifSoundFile,
-                lastDrinkDate: Date()
-            )
+            rescheduleNotifications(lastDrinkDate: Date())
         }
         .onChange(of: notifEndHour) { _, _ in
-            notificationScheduler.scheduleForTodayAndTomorrow(
-                startHour: notifStartHour,
-                endHour: notifEndHour,
-                soundFile: notifSoundFile,
-                lastDrinkDate: Date()
-            )
+            rescheduleNotifications(lastDrinkDate: Date())
         }
         .onChange(of: notifSoundFile) { _, _ in
-            notificationScheduler.scheduleForTodayAndTomorrow(
-                startHour: notifStartHour,
-                endHour: notifEndHour,
-                soundFile: notifSoundFile,
-                lastDrinkDate: Date()
-            )
+            rescheduleNotifications(lastDrinkDate: Date())
         }
         .onChange(of: fillFraction) { _, _ in
             surfacePulseStart = Date.timeIntervalSinceReferenceDate
@@ -255,6 +225,20 @@ private extension ContentView {
 
     var maskBounds: WaterMaskBounds {
         WaterMaskBounds(emptyFraction: calibratedEmptyFraction, fullFraction: calibratedFullFraction)
+    }
+    func rescheduleNotifications(lastDrinkDate: Date?) {
+        let scheduler = notificationScheduler
+        let startHour = notifStartHour
+        let endHour = notifEndHour
+        let sound = notifSoundFile
+        DispatchQueue.global(qos: .userInitiated).async {
+            scheduler.scheduleForTodayAndTomorrow(
+                startHour: startHour,
+                endHour: endHour,
+                soundFile: sound,
+                lastDrinkDate: lastDrinkDate
+            )
+        }
     }
 }
 
