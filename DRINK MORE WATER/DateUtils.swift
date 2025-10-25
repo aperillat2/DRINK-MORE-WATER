@@ -13,9 +13,4 @@ enum DateUtils {
     static func todayString() -> String {
         dayFormatter.string(from: Date())
     }
-
-    static func isToday(storedDayString: String) -> Bool {
-        guard let date = dayFormatter.date(from: storedDayString) else { return false }
-        return Calendar.current.isDateInToday(date)
-    }
 }

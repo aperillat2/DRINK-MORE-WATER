@@ -7,7 +7,6 @@
 
 import SwiftUI
 import CoreGraphics
-import UIKit
 
 private struct NotificationSchedulerKey: EnvironmentKey {
     static let defaultValue: NotificationScheduling = NotificationScheduler.shared
@@ -29,9 +28,6 @@ struct ContentView: View {
     @Environment(\.displayScale) private var displayScale: CGFloat
 
     @State private var showResetConfirmation: Bool = false
-    @State private var showCalibration: Bool = false
-    @State private var calTopY: CGFloat = 0
-    @State private var calBottomY: CGFloat = 0
 
     // Notification settings (persisted)
     @AppStorage("notifStartHour") private var notifStartHour: Int = 7    // 7 AM
@@ -133,22 +129,6 @@ struct ContentView: View {
             .padding(.trailing, 100)
             .padding(.top, 20)
         }
-        .overlay(alignment: .topLeading) {
-            if showCalibration {
-                Button("Log Fractions") {
-                    let topF = yToMaskFraction(calTopY)
-                    let bottomF = yToMaskFraction(calBottomY)
-                    print("Calibration fractions: fullFraction(top)=\(topF), emptyFraction(bottom)=\(bottomF)")
-                }
-                .font(.caption).bold()
-                .padding(8)
-                .background(Color.red.opacity(0.9))
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .padding(.leading, 16)
-                .padding(.top, 16)
-            }
-        }
         .alert("Reset today's intake?", isPresented: $showResetConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Reset", role: .destructive) {
@@ -179,11 +159,6 @@ struct ContentView: View {
         }
         .onAppear {
             viewModel.resetIfNeeded()
-            let metrics = WaterGlassMetrics.self
-            let innerHeight = metrics.glassSize.height - 163
-            let innerCenterY = metrics.glassVerticalNudge - 26
-            calTopY = innerCenterY - innerHeight / 2
-            calBottomY = innerCenterY + innerHeight / 2
             if scenePhase != .active {
                 let t = Date.timeIntervalSinceReferenceDate
                 frozenPhase = WaterGlassView.rippleSeed + t * WaterGlassView.waveSpeed
@@ -256,11 +231,6 @@ private extension ContentView {
             frozenPhase: frozenPhase,
             surfacePulseStart: surfacePulseStart
         )
-        .overlay(alignment: .center) {
-            if showCalibration {
-                calibrationOverlay
-            }
-        }
     }
 
     @ViewBuilder
@@ -284,67 +254,6 @@ private extension ContentView {
 
     var maskBounds: WaterMaskBounds {
         WaterMaskBounds(emptyFraction: calibratedEmptyFraction, fullFraction: calibratedFullFraction)
-    }
-    func yToMaskFraction(_ y: CGFloat) -> CGFloat {
-        let yInGlassSpace = y - (WaterGlassMetrics.glassVerticalNudge + WaterGlassMetrics.maskVerticalOffset)
-        let frac = yInGlassSpace / WaterGlassMetrics.glassSize.height
-        return max(0, min(1, frac))
-    }
-
-    @ViewBuilder
-    var calibrationOverlay: some View {
-        let glassSize = WaterGlassMetrics.glassSize
-        Group {
-            Rectangle()
-                .fill(Color.red)
-                .frame(width: glassSize.width, height: 3)
-                .position(x: glassSize.width / 2, y: calTopY)
-                .overlay(alignment: .trailing) {
-                    Text("Top: y=\(Int(calTopY)) frac=\(String(format: "%.4f", yToMaskFraction(calTopY)))")
-                        .font(.caption2).bold().foregroundColor(.white)
-                        .padding(6).background(Color.red.opacity(0.7))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .offset(x: -8, y: -14)
-                }
-
-            Rectangle()
-                .fill(Color.red)
-                .frame(width: glassSize.width, height: 3)
-                .position(x: glassSize.width / 2, y: calBottomY)
-                .overlay(alignment: .trailing) {
-                    Text("Bottom: y=\(Int(calBottomY)) frac=\(String(format: "%.4f", yToMaskFraction(calBottomY)))")
-                        .font(.caption2).bold().foregroundColor(.white)
-                        .padding(6).background(Color.red.opacity(0.7))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .offset(x: -8, y: -14)
-                }
-
-            Circle().fill(Color.red).frame(width: 10, height: 10).position(x: glassSize.width - 8, y: calTopY)
-            Circle().fill(Color.red).frame(width: 10, height: 10).position(x: glassSize.width - 8, y: calBottomY)
-
-            Color.clear
-                .frame(width: glassSize.width, height: glassSize.height)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            let y = value.location.y
-                            if abs(y - calTopY) <= abs(y - calBottomY) { calTopY = y } else { calBottomY = y }
-                        }
-                )
-
-            Button("Log Fractions") {
-                let topF = yToMaskFraction(calTopY)
-                let bottomF = yToMaskFraction(calBottomY)
-                print("Calibration fractions: fullFraction(top)=\(topF), emptyFraction(bottom)=\(bottomF)")
-            }
-            .font(.caption).bold()
-            .padding(6)
-            .background(Color.red.opacity(0.8))
-            .foregroundStyle(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .position(x: 100, y: 24)
-        }
     }
 }
 
