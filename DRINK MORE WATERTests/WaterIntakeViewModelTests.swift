@@ -90,7 +90,7 @@ struct FillFractionCalculatorTests {
     @Test("fraction increases with intake and stays within bounds")
     func fractionBasicBehavior() async throws {
         let calc = FillFractionCalculator()
-        let bounds = CalcMaskBounds(emptyFraction: 0.1, fullFraction: 0.9)
+        let bounds = WaterMaskBounds(emptyFraction: 0.1, fullFraction: 0.9)
         let goal: CGFloat = 80
         let perTap: CGFloat = 10
 
@@ -105,4 +105,3 @@ struct FillFractionCalculatorTests {
         #expect(f8 <= bounds.fullFraction)
     }
 }
-

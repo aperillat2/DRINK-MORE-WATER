@@ -1,22 +1,11 @@
 import Foundation
 import CoreGraphics
 
-// Local copy to avoid type conflicts when used from other files. The app already defines a MaskBounds in ContentView.swift.
-public struct CalcMaskBounds {
-    public let emptyFraction: CGFloat
-    public let fullFraction: CGFloat
-
-    public init(emptyFraction: CGFloat, fullFraction: CGFloat) {
-        self.emptyFraction = emptyFraction
-        self.fullFraction = fullFraction
-    }
-}
-
 public struct FillFractionCalculator {
     public init() {}
 
     // Mirrors the refined algorithm from ContentView: trims bottom/top, ensures first step is visible, last is below rim.
-    public func fraction(intakeOz: CGFloat, goalOz: CGFloat, bounds: CalcMaskBounds, perTapOz: CGFloat) -> CGFloat {
+    public func fraction(intakeOz: CGFloat, goalOz: CGFloat, bounds: WaterMaskBounds, perTapOz: CGFloat) -> CGFloat {
         let goal = max(goalOz, 0)
         let intake = max(0, min(goal, intakeOz))
         let perTap = max(1, perTapOz)
