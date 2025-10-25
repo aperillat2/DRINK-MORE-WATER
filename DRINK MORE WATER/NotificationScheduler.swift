@@ -1,24 +1,57 @@
 import Foundation
-import UserNotifications
-#if os(iOS)
 import UIKit
-#endif
+import UserNotifications
 
 protocol NotificationScheduling {
     func requestAuthorization() async
     func scheduleForTodayAndTomorrow(startHour: Int, endHour: Int, soundFile: String, lastDrinkDate: Date?)
 }
 
+protocol UserNotificationCentering {
+    func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool
+    func removeAllPendingNotificationRequests()
+    func add(_ request: UNNotificationRequest)
+    func resetBadge()
+}
+
+struct DefaultUserNotificationCenter: UserNotificationCentering {
+    private let center: UNUserNotificationCenter
+
+    init(center: UNUserNotificationCenter = .current()) {
+        self.center = center
+    }
+
+    func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool {
+        try await center.requestAuthorization(options: options)
+    }
+
+    func removeAllPendingNotificationRequests() {
+        center.removeAllPendingNotificationRequests()
+    }
+
+    func add(_ request: UNNotificationRequest) {
+        center.add(request)
+    }
+
+    func resetBadge() {
+        if #available(iOS 17.0, *) {
+            center.setBadgeCount(0) { _ in }
+        } else {
+            DispatchQueue.main.async { UIApplication.shared.applicationIconBadgeNumber = 0 }
+        }
+    }
+}
+
 /// Centralized helper that owns scheduling the hourly reminders.
 final class NotificationScheduler: NotificationScheduling {
     static let shared: NotificationScheduling = NotificationScheduler()
 
-    private let centerProvider: () -> UNUserNotificationCenter
+    private let centerProvider: () -> UserNotificationCentering
     private let calendar: Calendar
     private let now: () -> Date
 
     init(
-        centerProvider: @escaping () -> UNUserNotificationCenter = { UNUserNotificationCenter.current() },
+        centerProvider: @escaping () -> UserNotificationCentering = { DefaultUserNotificationCenter() },
         calendar: Calendar = .current,
         now: @escaping () -> Date = Date.init
     ) {
@@ -45,7 +78,7 @@ final class NotificationScheduler: NotificationScheduling {
     func scheduleForTodayAndTomorrow(startHour: Int, endHour: Int, soundFile: String, lastDrinkDate: Date?) {
         let center = centerProvider()
         center.removeAllPendingNotificationRequests()
-        resetBadge(using: center)
+        center.resetBadge()
 
         let today = now()
 
@@ -153,15 +186,5 @@ private extension NotificationScheduler {
             if let fromRoot = search(in: base) { return fromRoot }
         }
         return nil
-    }
-
-    func resetBadge(using center: UNUserNotificationCenter) {
-        #if os(iOS)
-        if #available(iOS 17.0, *) {
-            center.setBadgeCount(0) { _ in }
-        } else {
-            DispatchQueue.main.async { UIApplication.shared.applicationIconBadgeNumber = 0 }
-        }
-        #endif
     }
 }

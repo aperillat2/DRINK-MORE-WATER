@@ -7,9 +7,7 @@
 
 import SwiftUI
 import CoreGraphics
-#if canImport(UIKit)
 import UIKit
-#endif
 
 private struct NotificationSchedulerKey: EnvironmentKey {
     static let defaultValue: NotificationScheduling = NotificationScheduler.shared

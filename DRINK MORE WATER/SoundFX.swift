@@ -9,10 +9,8 @@ final class SoundFX {
     private let splashVolume: Float = 0.08
 
     private init() {
-        #if !targetEnvironment(simulator)
         try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
         try? AVAudioSession.sharedInstance().setActive(true, options: [])
-        #endif
         preloadSplash()
     }
 

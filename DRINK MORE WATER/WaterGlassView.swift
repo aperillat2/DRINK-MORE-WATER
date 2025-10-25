@@ -1,8 +1,7 @@
 import SwiftUI
 import CoreGraphics
-#if canImport(UIKit)
 import UIKit
-#endif
+import Combine
 
 enum WaterGlassMetrics {
     static let glassSize = CGSize(width: 551, height: 722)
@@ -23,7 +22,7 @@ struct WaterGlassView: View {
 
     @Environment(\.displayScale) private var displayScale: CGFloat
 
-    @State private var animator = WaterGlassAnimator()
+    @StateObject private var animator = WaterGlassAnimator()
 
     static let waveSpeed: Double = 2.3
     static let glareSpeed: Double = 0.01
@@ -43,9 +42,6 @@ private extension WaterGlassView {
         let clamped = clamp01(targetFraction)
         animator.configure(initialFraction: clamped)
 
-        #if os(iOS)
-        _ = MaskAnalyzer.shared.prepare()
-        #endif
     }
 
     func updateAnimationState(with newValue: CGFloat) {
@@ -53,11 +49,7 @@ private extension WaterGlassView {
     }
 
     var glassVisual: some View {
-        #if targetEnvironment(simulator)
-        let fps: Double = 20.0
-        #else
         let fps: Double = 30.0
-        #endif
         return TimelineView(.periodic(from: .now, by: 1.0 / fps)) { context in
             let now = context.date.timeIntervalSinceReferenceDate
             buildGlassContent(now: now)
@@ -75,12 +67,8 @@ private extension WaterGlassView {
         let px = 1.0 / max(displayScale, 1)
         let waterTopAligned = round(waterTop / px) * px
 
-        #if os(iOS)
         let yFrac = max(0, min(1, waterTopAligned / glassSize.height))
         let widthFraction = GlassWidthAnalyzer.shared.widthFraction(atYFraction: yFrac) ?? 1.0
-        #else
-        let widthFraction: CGFloat = 1.0
-        #endif
 
         let fillMask = makeFillMask(
             waterTopAligned: waterTopAligned,
@@ -201,11 +189,9 @@ private extension WaterGlassView {
     }
 
     var surfaceMaskAspect: CGFloat {
-        #if os(iOS)
         if let cg = UIImage(named: "glass_surface_mask")?.cgImage {
             return CGFloat(cg.height) / CGFloat(cg.width)
         }
-        #endif
         return 88.0 / 480.0
     }
 
@@ -306,7 +292,8 @@ private extension WaterGlassView {
     func clamp01(_ x: CGFloat) -> CGFloat { max(0, min(1, x)) }
 }
 
-private struct WaterGlassAnimator {
+@MainActor
+final class WaterGlassAnimator: ObservableObject {
     private let levelAnimDuration: Double = 1.5
 
     private var displayedFraction: CGFloat = 0
@@ -316,7 +303,7 @@ private struct WaterGlassAnimator {
     private var glarePhaseAccumulator: Double = 0
     private var lastTimelineTime: Double? = nil
 
-    mutating func configure(initialFraction: CGFloat) {
+    func configure(initialFraction: CGFloat) {
         let clamped = clamp(initialFraction)
         displayedFraction = clamped
         levelAnimFrom = clamped
@@ -326,7 +313,7 @@ private struct WaterGlassAnimator {
         lastTimelineTime = nil
     }
 
-    mutating func updateTargetFraction(_ target: CGFloat, now: Double) {
+    func updateTargetFraction(_ target: CGFloat, now: Double) {
         let clampedTarget = clamp(target)
         let current: CGFloat
         if let start = levelAnimStart {
@@ -341,7 +328,7 @@ private struct WaterGlassAnimator {
         levelAnimStart = now
     }
 
-    mutating func snapshot(now: Double, frozenPhase: Double?) -> Snapshot {
+    func snapshot(now: Double, frozenPhase: Double?) -> Snapshot {
         let fraction: CGFloat
         if let start = levelAnimStart {
             let raw = max(0, min(1, (now - start) / levelAnimDuration))
@@ -724,7 +711,6 @@ private struct WaterFillRenderer: View {
 private extension Color {
     func mix(with color: Color, fraction: Double) -> Color {
         let f = min(max(fraction, 0), 1)
-        #if canImport(UIKit)
         let a = UIColor(self), b = UIColor(color)
         var r1: CGFloat = 0, g1: CGFloat = 0, b1c: CGFloat = 0, a1: CGFloat = 0
         var r2: CGFloat = 0, g2: CGFloat = 0, b2c: CGFloat = 0, a2: CGFloat = 0
@@ -736,9 +722,6 @@ private extension Color {
             blue: Double(b1c + (b2c - b1c) * f),
             opacity: Double(a1 + (a2 - a1) * f)
         )
-        #else
-        return self
-        #endif
     }
 }
 
@@ -753,9 +736,7 @@ private struct RefractedTextView: View {
     let rippleAmplitude: CGFloat
 
     @Environment(\.displayScale) private var displayScale: CGFloat
-    #if os(iOS)
     private let baseImage: CGImage?
-    #endif
 
     init(
         imageName: String,
@@ -775,14 +756,11 @@ private struct RefractedTextView: View {
         self.waterline = waterline
         self.ripplePhase = ripplePhase
         self.rippleAmplitude = rippleAmplitude
-        #if os(iOS)
         self.baseImage = UIImage(named: imageName)?.cgImage
-        #endif
     }
 
     var body: some View {
         Canvas { context, _ in
-            #if os(iOS)
             guard let baseImage else { return }
 
             let imgW = CGFloat(baseImage.width)
@@ -840,10 +818,6 @@ private struct RefractedTextView: View {
 
                 cg.restoreGState()
             }
-            #else
-            let resolved = context.resolve(Image(imageName))
-            context.draw(resolved, in: CGRect(origin: .zero, size: glassSize))
-            #endif
         }
         .frame(width: glassSize.width, height: glassSize.height)
         .scaleEffect(textScale)
@@ -852,70 +826,6 @@ private struct RefractedTextView: View {
         .blur(radius: 0.4)
         .opacity(0.9)
         .accessibilityHidden(true)
-    }
-}
-
-#if os(iOS)
-private final class MaskAnalyzer {
-    static let shared = MaskAnalyzer()
-    private(set) var bounds: WaterMaskBounds?
-
-    func prepare() -> Bool {
-        guard bounds == nil else { return true }
-        guard let image = UIImage(named: "glass_mask") else { return false }
-        guard let newBounds = MaskAnalyzer.computeBounds(from: image) else { return false }
-        bounds = newBounds
-        return true
-    }
-
-    private static func computeBounds(from image: UIImage) -> WaterMaskBounds? {
-        guard let cgImage = image.cgImage else { return nil }
-        let width = cgImage.width
-        let height = cgImage.height
-        let bytesPerPixel = 4
-        let bytesPerRow = bytesPerPixel * width
-
-        guard let context = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: bytesPerRow,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
-
-        context.interpolationQuality = .none
-        context.translateBy(x: 0, y: CGFloat(height))
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-
-        guard let data = context.data else { return nil }
-        let buffer = data.bindMemory(to: UInt8.self, capacity: width * height * bytesPerPixel)
-
-        let alphaThreshold: UInt8 = 10
-        var topRow: Int?
-        var bottomRow: Int?
-
-        for row in 0..<height {
-            let rowStart = row * bytesPerRow
-            for col in 0..<width {
-                let alpha = buffer[rowStart + col * bytesPerPixel + 3]
-                if alpha > alphaThreshold {
-                    if topRow == nil { topRow = row }
-                    bottomRow = row
-                    break
-                }
-            }
-        }
-
-        guard let tRow = topRow, let bRow = bottomRow else { return nil }
-        let denominator = max(height - 1, 1)
-
-        let topFraction = 1 - CGFloat(tRow) / CGFloat(denominator)
-        let bottomFraction = 1 - CGFloat(bRow) / CGFloat(denominator)
-
-        return WaterMaskBounds(emptyFraction: bottomFraction, fullFraction: topFraction)
     }
 }
 
@@ -957,4 +867,3 @@ private final class GlassWidthAnalyzer {
         return CGFloat(r - l + 1) / CGFloat(W)
     }
 }
-#endif
