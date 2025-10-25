@@ -229,7 +229,8 @@ private extension ContentView {
         WaterGlassView(
             targetFraction: fillFraction,
             frozenPhase: frozenPhase,
-            surfacePulseStart: surfacePulseStart
+            surfacePulseStart: surfacePulseStart,
+            hideUnderwaterText: viewModel.intakeOz >= viewModel.dailyGoalOz
         )
     }
 

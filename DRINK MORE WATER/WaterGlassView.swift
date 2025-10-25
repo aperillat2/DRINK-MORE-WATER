@@ -16,6 +16,7 @@ struct WaterGlassView: View {
     let targetFraction: CGFloat
     let frozenPhase: Double?
     let surfacePulseStart: Double?
+    let hideUnderwaterText: Bool
 
     private let surfacePulseDuration: Double = 0.9
     private let surfacePulseSpeed: Double = 1.35
@@ -84,7 +85,8 @@ private extension WaterGlassView {
             surfaceMaskAspect: surfaceMaskAspect,
             waterTopAligned: waterTopAligned,
             now: now,
-            fillMask: fillMask
+            fillMask: fillMask,
+            hideUnderwaterText: hideUnderwaterText
         )
     }
 
@@ -96,7 +98,8 @@ private extension WaterGlassView {
         surfaceMaskAspect: CGFloat,
         waterTopAligned: CGFloat,
         now: Double,
-        fillMask: AnyView
+        fillMask: AnyView,
+        hideUnderwaterText: Bool
     ) -> AnyView {
         let glassSize = WaterGlassMetrics.glassSize
         return AnyView(
@@ -105,7 +108,8 @@ private extension WaterGlassView {
                     fraction: fraction,
                     ripplePhase: ripplePhase,
                     widthFraction: widthFraction,
-                    surfaceMaskAspect: surfaceMaskAspect
+                    surfaceMaskAspect: surfaceMaskAspect,
+                    hideUnderwaterText: hideUnderwaterText
                 )
                 .transaction { $0.animation = nil }
                 .animation(nil, value: fraction)
@@ -228,7 +232,8 @@ private extension WaterGlassView {
         fraction: CGFloat,
         ripplePhase: Double,
         widthFraction: CGFloat,
-        surfaceMaskAspect: CGFloat
+        surfaceMaskAspect: CGFloat,
+        hideUnderwaterText: Bool
     ) -> AnyView {
         let glassSize = WaterGlassMetrics.glassSize
         let clamped = max(0, min(fraction, 1))
@@ -242,6 +247,8 @@ private extension WaterGlassView {
         let aboveAligned = round(localAbove / px) * px
 
         let underwaterTextTint: Color = Color(hue: 0.58, saturation: 0.5, brightness: 1.0)
+        let shouldHideUnderwater = hideUnderwaterText || clamped >= 0.999
+        let showGoalBadge = hideUnderwaterText
 
         return AnyView(
             ZStack {
@@ -260,23 +267,40 @@ private extension WaterGlassView {
                     .transaction { $0.animation = nil }
                     .animation(nil, value: aboveAligned)
                     .animation(nil, value: fraction)
+                    .animation(.easeInOut(duration: 0.35), value: showGoalBadge)
+                    .opacity(showGoalBadge ? 0 : 1)
                     .accessibilityHidden(true)
 
-                RefractedTextView(
-                    imageName: "glass_text",
-                    glassSize: glassSize,
-                    textScale: WaterGlassMetrics.textScale,
-                    textOffset: WaterGlassMetrics.textOffset,
-                    verticalNudge: WaterGlassMetrics.glassVerticalNudge,
-                    waterline: underwaterStartY,
-                    ripplePhase: ripplePhase,
-                    rippleAmplitude: 4
-                )
-                .mask(glassMask())
-                .colorMultiply(underwaterTextTint)
-                .transaction { $0.animation = nil }
-                .animation(nil, value: fraction)
-                .accessibilityHidden(true)
+                if !shouldHideUnderwater {
+                    RefractedTextView(
+                        imageName: "glass_text",
+                        glassSize: glassSize,
+                        textScale: WaterGlassMetrics.textScale,
+                        textOffset: WaterGlassMetrics.textOffset,
+                        verticalNudge: WaterGlassMetrics.glassVerticalNudge,
+                        waterline: underwaterStartY,
+                        ripplePhase: ripplePhase,
+                        rippleAmplitude: 4
+                    )
+                    .mask(glassMask())
+                    .colorMultiply(underwaterTextTint)
+                    .transaction { $0.animation = nil }
+                    .animation(nil, value: fraction)
+                    .animation(.easeInOut(duration: 0.35), value: showGoalBadge)
+                    .opacity(showGoalBadge ? 0 : 1)
+                    .accessibilityHidden(true)
+                }
+
+                Image("daily_goal_met")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: glassSize.width, height: glassSize.height)
+                    .scaleEffect(WaterGlassMetrics.textScale)
+                    .offset(y: WaterGlassMetrics.glassVerticalNudge)
+                    .offset(x: WaterGlassMetrics.textOffset.width, y: WaterGlassMetrics.textOffset.height)
+                    .opacity(showGoalBadge ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.35), value: showGoalBadge)
+                    .accessibilityHidden(true)
             }
         )
     }
@@ -865,5 +889,62 @@ private final class GlassWidthAnalyzer {
         for x in stride(from: W-1, through: 0, by: -1) where buf[x*bytesPerPixel+3] > alphaThreshold { right = x; break }
         guard let l = left, let r = right, r >= l else { return 0 }
         return CGFloat(r - l + 1) / CGFloat(W)
+    }
+}
+
+private final class ImageContentAnalyzer {
+    static let shared = ImageContentAnalyzer()
+    private let alphaThreshold: UInt8 = 10
+    private var cache: [String: CGRect] = [:]
+
+    func normalizedBoundingBox(for imageName: String) -> CGRect? {
+        if let cached = cache[imageName] { return cached }
+        guard let cgImage = UIImage(named: imageName)?.cgImage else { return nil }
+        let width = cgImage.width
+        let height = cgImage.height
+        let bytesPerPixel = 4
+        let bytesPerRow = bytesPerPixel * width
+        guard let ctx = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let data = ctx.data else { return nil }
+        let buf = data.bindMemory(to: UInt8.self, capacity: bytesPerRow * height)
+
+        var minX = width
+        var minY = height
+        var maxX = -1
+        var maxY = -1
+
+        for y in 0..<height {
+            let rowOffset = y * bytesPerRow
+            for x in 0..<width where buf[rowOffset + x * bytesPerPixel + 3] > alphaThreshold {
+                if x < minX { minX = x }
+                if x > maxX { maxX = x }
+                if y < minY { minY = y }
+                if y > maxY { maxY = y }
+            }
+        }
+
+        guard maxX >= minX, maxY >= minY else {
+            cache[imageName] = nil
+            return nil
+        }
+
+        let rect = CGRect(
+            x: CGFloat(minX) / CGFloat(width),
+            y: CGFloat(minY) / CGFloat(height),
+            width: CGFloat(maxX - minX + 1) / CGFloat(width),
+            height: CGFloat(maxY - minY + 1) / CGFloat(height)
+        )
+        cache[imageName] = rect
+        return rect
     }
 }
