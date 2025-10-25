@@ -789,9 +789,10 @@ private struct RefractedTextView: View {
             let clamped = max(fittedRect.minY, min(canvasWaterY, fittedRect.maxY))
 
             let px = 1.0 / max(displayScale, 1)
-            let seamY = round(clamped / px) * px
+            let seamYRaw = clamped
+            let seamY = round(seamYRaw / px) * px
 
-            let sliceStep: CGFloat = 3
+            let sliceStep: CGFloat = 1
             let sy = imgH / fittedRect.height
 
             context.withCGContext { cg in
@@ -803,13 +804,16 @@ private struct RefractedTextView: View {
                     height: max(fittedRect.maxY - seamY, 0)
                 ))
 
+                let seamRel = max(0, min(1, (seamYRaw - fittedRect.minY) / max(fittedRect.height, 1)))
+                let seamPhase = ripplePhase + Double(seamRel) * 12.0
+                let seamBaseline = CGFloat(sin(seamPhase) * Double(rippleAmplitude))
+
                 var y = max(seamY, fittedRect.minY)
                 while y < fittedRect.maxY {
                     let bandHeight = min(sliceStep, fittedRect.maxY - y)
-                    let absProg = (y - fittedRect.minY) / max(fittedRect.height, 1)
+                    let absProg = max(0, min(1, (y - fittedRect.minY) / max(fittedRect.height, 1)))
                     let phase = ripplePhase + Double(absProg) * 12.0
-                    let offset = CGFloat(sin(phase) * Double(rippleAmplitude))
-
+                    let offset = CGFloat(sin(phase) * Double(rippleAmplitude)) - seamBaseline
                     let srcY = (y - fittedRect.minY) * sy
                     let srcH = bandHeight * sy
                     let src = CGRect(x: 0, y: srcY, width: imgW, height: srcH).integral
