@@ -31,6 +31,7 @@ struct ContentView: View {
     @AppStorage("notifEndHour") private var notifEndHour: Int = 22       // 10 PM
     @AppStorage("notifSoundFile") private var notifSoundFile: String = "drink more water"
     @State private var showNotificationSettings: Bool = false
+    @AppStorage("muteTapSound") private var muteTapSound: Bool = false
 
     // Mask calibration (MaskAnalyzer space: 1 = top, 0 = bottom)
     private let calibratedFullFraction: CGFloat = 1.0 - 0.198522622345337
@@ -61,7 +62,9 @@ struct ContentView: View {
     private let maskVerticalOffset: CGFloat = 5
     private let maskHorizontalOffset: CGFloat = 2
     private let uiTestButtonFlag = "-UITestsForceButton"
-    
+
+    // Tint applied only to the underwater letters (leave water tint unchanged)
+    private let underwaterTextTint: Color = Color(hue: 0.58, saturation: 0.5, brightness: 1.0)
     private let sfx = SoundFX.shared
     private let notificationScheduler = NotificationScheduler.shared
 
@@ -82,7 +85,7 @@ struct ContentView: View {
         guard let step = viewModel.nextIntakeStep() else { return }
         surfacePulseStart = Date.timeIntervalSinceReferenceDate
         haptics.impactLight()
-        sfx.playSplash()
+        if !muteTapSound { sfx.playSplash() }
         viewModel.intakeOz = step.newValue
 
         // Reschedule notifications to be 1 hour from now and then hourly within the window
@@ -172,6 +175,7 @@ struct ContentView: View {
                 startHour: $notifStartHour,
                 endHour: $notifEndHour,
                 selectedSound: $notifSoundFile,
+                muteTapSound: $muteTapSound,
                 onApply: {
                     // Re-schedule notifications using current or last drink time
                     let lastDrinkDate = Date() // use now as baseline when changing settings
@@ -309,11 +313,13 @@ private extension ContentView {
     private final class SoundFX {
         static let shared = SoundFX()
         private var splashPlayer: AVAudioPlayer?
+        private let splashVolume: Float = 0.08
 
         private init() {
-            // Respect Silent Mode, allow mixing
+            #if !targetEnvironment(simulator)
             try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
             try? AVAudioSession.sharedInstance().setActive(true, options: [])
+            #endif
             preloadPour()
         }
 
@@ -322,9 +328,10 @@ private extension ContentView {
             // Works whether "Sounds" is a real folder (blue) or just a group (yellow)
             let url =
                 bundle.url(forResource: "water pour 2", withExtension: "caf", subdirectory: "Sounds") ??
-                bundle.url(forResource: "water pou 2", withExtension: "caf")
+                bundle.url(forResource: "water pour 2", withExtension: "caf")
             guard let url else { return }
             splashPlayer = try? AVAudioPlayer(contentsOf: url)
+            splashPlayer?.volume = splashVolume
             splashPlayer?.prepareToPlay()
         }
 
@@ -332,6 +339,7 @@ private extension ContentView {
             if splashPlayer == nil { preloadPour() }
             splashPlayer?.stop()
             splashPlayer?.currentTime = 0
+            splashPlayer?.volume = splashVolume
             splashPlayer?.play()
         }
     }
@@ -470,26 +478,25 @@ private extension ContentView {
 
     // Further type-erasure to help the compiler in the TimelineView closure
     func buildGlassContent(now: Double) -> AnyView {
-        // Drive a manual 1.0 s ease-out ramp independent of implicit animations.
-        var fraction = displayedFraction
+        // Drive a manual ease-out ramp independent of implicit animations without mutating @State during render.
+        let fraction: CGFloat
         if let start = levelAnimStart {
             let raw = min(max((now - start) / levelAnimDuration, 0), 1)
             let eased = easeOutCubic(raw)
-            fraction = levelAnimFrom + CGFloat(eased) * (levelAnimTo - levelAnimFrom)
-            displayedFraction = fraction
+            fraction = clamp01(levelAnimFrom + CGFloat(eased) * (levelAnimTo - levelAnimFrom))
             if raw >= 1 {
-                levelAnimStart = nil
-                displayedFraction = levelAnimTo
-                fraction = levelAnimTo
+                // Defer state updates to outside the render pass
+                DispatchQueue.main.async {
+                    if levelAnimStart != nil {
+                        levelAnimStart = nil
+                        displayedFraction = clamp01(levelAnimTo)
+                    }
+                }
             }
         } else {
-            // When not animating, continue from the last displayed value to avoid reset jumps.
-            // We already sync displayedFraction onAppear and when scene becomes inactive/active.
-            fraction = displayedFraction
+            // When not animating, continue from the last displayed value
+            fraction = clamp01(displayedFraction)
         }
-
-        // Clamp to prevent any temporary out-of-range artifacts
-        fraction = clamp01(fraction)
 
         let ripplePhase = frozenPhase ?? (Self.rippleSeed + now * waveSpeed)
 
@@ -524,9 +531,13 @@ private extension ContentView {
     }
 
     var glassVisual: some View {
-        TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { _ in
+        #if targetEnvironment(simulator)
+        let fps: Double = 20.0
+        #else
+        let fps: Double = 30.0
+        #endif
+        return TimelineView(.periodic(from: .now, by: 1.0 / fps)) { _ in
             let now = Date.timeIntervalSinceReferenceDate
-
             buildGlassContent(now: now)
         }
     }
@@ -613,6 +624,7 @@ private extension ContentView {
                     rippleAmplitude: 4
                 )
                 .mask(glassMask())
+                .colorMultiply(underwaterTextTint)
                 .transaction { $0.animation = nil }
                 .animation(nil, value: fraction)
                 .accessibilityHidden(true)
@@ -948,8 +960,8 @@ private struct GlassInnerShadow: View {
                 .init(color: .black.opacity(0.00), location: 1.00),
             ])
             let rightGrad = Gradient(stops: [
-                .init(color: .black.opacity(0.18), location: 1.00),
                 .init(color: .black.opacity(0.00), location: 0.00),
+                .init(color: .black.opacity(0.18), location: 1.00),
             ])
 
             ctx.fill(Path(leftRect),
@@ -966,8 +978,8 @@ private struct GlassInnerShadow: View {
             let bottomH = r.height * 0.10
             let bottomRect = CGRect(x: r.minX, y: r.maxY - bottomH, width: r.width, height: bottomH)
             let bottomGrad = Gradient(stops: [
-                .init(color: .black.opacity(0.16), location: 1.00),
-                .init(color: .black.opacity(0.00), location: 0.00),
+                .init(color: .black.opacity(0.16), location: 0.00),
+                .init(color: .black.opacity(0.00), location: 1.00),
             ])
             ctx.fill(Path(bottomRect),
                      with: .linearGradient(bottomGrad,
@@ -1305,6 +1317,7 @@ private struct NotificationSettingsView: View {
     @Binding var startHour: Int
     @Binding var endHour: Int
     @Binding var selectedSound: String
+    @Binding var muteTapSound: Bool
     var onApply: () -> Void
     var onResetToday: () -> Void
 
@@ -1329,15 +1342,13 @@ private struct NotificationSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Section(header: Text("Sound")) {
-                    Picker("Sound", selection: $selectedSound) {
+                Section(header: Text("Ntification Sound")) {
+                    Picker("", selection: $selectedSound) {
                         ForEach(availableSoundsBaseNames(), id: \.self) { name in
                             Text(name).tag(name)
                         }
                     }
-                    Text("Sounds are loaded from the Sounds folder in the app bundle.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    Toggle("Mute Add Water Sound", isOn: $muteTapSound)
                 }
 
                 Section {
@@ -1504,7 +1515,7 @@ struct SplashView: View {
     var body: some View {
         ZStack {
             Color(.systemBlue)
-            Image("drink more water")
+            Image("drink_more_water")
                 .resizable()
                 .scaledToFit()
                 .frame(width: 551, height: 722)
