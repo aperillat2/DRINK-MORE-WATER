@@ -10,6 +10,18 @@ import CoreGraphics
 #if canImport(UIKit)
 import UIKit
 #endif
+
+private struct NotificationSchedulerKey: EnvironmentKey {
+    static let defaultValue: NotificationScheduling = NotificationScheduler.shared
+}
+
+extension EnvironmentValues {
+    var notificationScheduler: NotificationScheduling {
+        get { self[NotificationSchedulerKey.self] }
+        set { self[NotificationSchedulerKey.self] = newValue }
+    }
+}
+
 struct ContentView: View {
     private let haptics = HapticsFactory.default()
     private let calculator = FillFractionCalculator()
@@ -42,7 +54,7 @@ struct ContentView: View {
 
     private let uiTestButtonFlag = "-UITestsForceButton"
     private let sfx = SoundFX.shared
-    private let notificationScheduler = NotificationScheduler.shared
+    @Environment(\.notificationScheduler) private var notificationScheduler
 
     private var fillFraction: CGFloat {
         let bounds = maskBounds

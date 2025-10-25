@@ -4,16 +4,33 @@ import UserNotifications
 import UIKit
 #endif
 
-/// Centralized helper that owns scheduling the hourly reminders.
-final class NotificationScheduler {
-    static let shared = NotificationScheduler()
+protocol NotificationScheduling {
+    func requestAuthorization() async
+    func scheduleForTodayAndTomorrow(startHour: Int, endHour: Int, soundFile: String, lastDrinkDate: Date?)
+}
 
-    private init() {}
+/// Centralized helper that owns scheduling the hourly reminders.
+final class NotificationScheduler: NotificationScheduling {
+    static let shared: NotificationScheduling = NotificationScheduler()
+
+    private let centerProvider: () -> UNUserNotificationCenter
+    private let calendar: Calendar
+    private let now: () -> Date
+
+    init(
+        centerProvider: @escaping () -> UNUserNotificationCenter = { UNUserNotificationCenter.current() },
+        calendar: Calendar = .current,
+        now: @escaping () -> Date = Date.init
+    ) {
+        self.centerProvider = centerProvider
+        self.calendar = calendar
+        self.now = now
+    }
 
     func requestAuthorization() async {
-        let center = UNUserNotificationCenter.current()
+        let center = centerProvider()
         do {
-            try await center.requestAuthorization(options: [.alert, .badge, .sound])
+            _ = try await center.requestAuthorization(options: [.alert, .badge, .sound])
         } catch {
             print("Notification authorization failed: \(error)")
         }
@@ -26,18 +43,11 @@ final class NotificationScheduler {
     ///   - soundFile: bundle sound filename (e.g., "drink more water.caf")
     ///   - lastDrinkDate: if provided, first notification is 1 hour after this time (clamped to window)
     func scheduleForTodayAndTomorrow(startHour: Int, endHour: Int, soundFile: String, lastDrinkDate: Date?) {
-        let center = UNUserNotificationCenter.current()
+        let center = centerProvider()
         center.removeAllPendingNotificationRequests()
-        #if os(iOS)
-        if #available(iOS 17.0, *) {
-            center.setBadgeCount(0) { _ in }
-        } else {
-            DispatchQueue.main.async { UIApplication.shared.applicationIconBadgeNumber = 0 }
-        }
-        #endif
+        resetBadge(using: center)
 
-        let calendar = Calendar.current
-        let now = Date()
+        let today = now()
 
         func hourlyTimes(for day: Date) -> [Date] {
             guard let start = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: day),
@@ -51,8 +61,8 @@ final class NotificationScheduler {
             return times
         }
 
-        let windowStart = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: now)
-        let windowEnd = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: now)
+        let windowStart = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: today)
+        let windowEnd = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: today)
 
         func clampedFirstReminder() -> Date? {
             guard let lastDrinkDate else { return nil }
@@ -64,7 +74,7 @@ final class NotificationScheduler {
         }
 
         let firstFromDrink = clampedFirstReminder()
-        let todayTimes = hourlyTimes(for: now)
+        let todayTimes = hourlyTimes(for: today)
 
         let filteredToday: [Date] = {
             if let first = firstFromDrink {
@@ -74,40 +84,14 @@ final class NotificationScheduler {
                     if next > first { result.append(next) }
                     next = calendar.date(byAdding: .hour, value: 1, to: next) ?? next.addingTimeInterval(3600)
                 }
-                return result.filter { $0 > now }
+                return result.filter { $0 > today }
             } else {
-                return todayTimes.filter { $0 > now }
+                return todayTimes.filter { $0 > today }
             }
         }()
 
-        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now.addingTimeInterval(86400)
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today.addingTimeInterval(86400)
         let tomorrowTimes = hourlyTimes(for: tomorrow)
-
-        func resolveSoundFilename(baseName: String) -> String? {
-            guard !baseName.isEmpty else { return nil }
-            let fm = FileManager.default
-            let exts = ["caf", "aiff", "wav"]
-
-            func search(in path: String) -> String? {
-                guard let items = try? fm.contentsOfDirectory(atPath: path) else { return nil }
-                for ext in exts {
-                    if let match = items.first(where: { ($0 as NSString).deletingPathExtension.caseInsensitiveCompare(baseName) == .orderedSame && ($0 as NSString).pathExtension.lowercased() == ext }) {
-                        return match
-                    }
-                }
-                if let any = items.first(where: { ($0 as NSString).deletingPathExtension.caseInsensitiveCompare(baseName) == .orderedSame }) {
-                    return any
-                }
-                return nil
-            }
-
-            if let base = Bundle.main.resourcePath {
-                let soundsPath = (base as NSString).appendingPathComponent("Sounds")
-                if let fromSounds = search(in: soundsPath) { return fromSounds }
-                if let fromRoot = search(in: base) { return fromRoot }
-            }
-            return nil
-        }
 
         let resolvedName = resolveSoundFilename(baseName: soundFile)
         let sound: UNNotificationSound? = {
@@ -141,5 +125,43 @@ final class NotificationScheduler {
         for (index, time) in tomorrowTimes.enumerated() {
             schedule(date: time, id: "tomorrow_\(index)")
         }
+    }
+}
+
+private extension NotificationScheduler {
+    func resolveSoundFilename(baseName: String) -> String? {
+        guard !baseName.isEmpty else { return nil }
+        let fm = FileManager.default
+        let exts = ["caf", "aiff", "wav"]
+
+        func search(in path: String) -> String? {
+            guard let items = try? fm.contentsOfDirectory(atPath: path) else { return nil }
+            for ext in exts {
+                if let match = items.first(where: { ($0 as NSString).deletingPathExtension.caseInsensitiveCompare(baseName) == .orderedSame && ($0 as NSString).pathExtension.lowercased() == ext }) {
+                    return match
+                }
+            }
+            if let any = items.first(where: { ($0 as NSString).deletingPathExtension.caseInsensitiveCompare(baseName) == .orderedSame }) {
+                return any
+            }
+            return nil
+        }
+
+        if let base = Bundle.main.resourcePath {
+            let soundsPath = (base as NSString).appendingPathComponent("Sounds")
+            if let fromSounds = search(in: soundsPath) { return fromSounds }
+            if let fromRoot = search(in: base) { return fromRoot }
+        }
+        return nil
+    }
+
+    func resetBadge(using center: UNUserNotificationCenter) {
+        #if os(iOS)
+        if #available(iOS 17.0, *) {
+            center.setBadgeCount(0) { _ in }
+        } else {
+            DispatchQueue.main.async { UIApplication.shared.applicationIconBadgeNumber = 0 }
+        }
+        #endif
     }
 }

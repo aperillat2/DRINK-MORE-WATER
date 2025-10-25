@@ -18,19 +18,12 @@ struct WaterGlassView: View {
     let frozenPhase: Double?
     let surfacePulseStart: Double?
 
-    private let levelAnimDuration: Double = 1.5
     private let surfacePulseDuration: Double = 0.9
     private let surfacePulseSpeed: Double = 1.35
 
     @Environment(\.displayScale) private var displayScale: CGFloat
 
-    @State private var displayedFraction: CGFloat = 0
-    @State private var levelAnimFrom: CGFloat = 0
-    @State private var levelAnimTo: CGFloat = 0
-    @State private var levelAnimStart: Double? = nil
-    @State private var glarePhaseValue: Double = 0
-    @State private var glarePhaseAccumulator: Double = 0
-    @State private var lastTimelineTime: Double? = nil
+    @State private var animator = WaterGlassAnimator()
 
     static let waveSpeed: Double = 2.3
     static let glareSpeed: Double = 0.01
@@ -48,13 +41,7 @@ struct WaterGlassView: View {
 private extension WaterGlassView {
     func configureOnAppear() {
         let clamped = clamp01(targetFraction)
-        displayedFraction = clamped
-        levelAnimFrom = clamped
-        levelAnimTo = clamped
-        levelAnimStart = nil
-        glarePhaseValue = 0
-        glarePhaseAccumulator = 0
-        lastTimelineTime = nil
+        animator.configure(initialFraction: clamped)
 
         #if os(iOS)
         _ = MaskAnalyzer.shared.prepare()
@@ -62,21 +49,7 @@ private extension WaterGlassView {
     }
 
     func updateAnimationState(with newValue: CGFloat) {
-        let target = clamp01(newValue)
-        let now = Date.timeIntervalSinceReferenceDate
-
-        let current: CGFloat
-        if let start = levelAnimStart {
-            let raw = min(max((now - start) / levelAnimDuration, 0), 1)
-            let eased = easeOutCubic(raw)
-            current = levelAnimFrom + CGFloat(eased) * (levelAnimTo - levelAnimFrom)
-        } else {
-            current = displayedFraction
-        }
-
-        levelAnimFrom = clamp01(current)
-        levelAnimTo = target
-        levelAnimStart = now
+        animator.updateTargetFraction(clamp01(newValue), now: Date.timeIntervalSinceReferenceDate)
     }
 
     var glassVisual: some View {
@@ -92,24 +65,10 @@ private extension WaterGlassView {
     }
 
     func buildGlassContent(now: Double) -> AnyView {
-        let fraction: CGFloat
-        if let start = levelAnimStart {
-            let raw = min(max((now - start) / levelAnimDuration, 0), 1)
-            let eased = easeOutCubic(raw)
-            fraction = clamp01(levelAnimFrom + CGFloat(eased) * (levelAnimTo - levelAnimFrom))
-            if raw >= 1 {
-                DispatchQueue.main.async {
-                    if levelAnimStart != nil {
-                        levelAnimStart = nil
-                        displayedFraction = clamp01(levelAnimTo)
-                    }
-                }
-            }
-        } else {
-            fraction = clamp01(displayedFraction)
-        }
-
-        let ripplePhase = frozenPhase ?? (Self.rippleSeed + now * Self.waveSpeed)
+        let snapshot = animator.snapshot(now: now, frozenPhase: frozenPhase)
+        let fraction = snapshot.fraction
+        let ripplePhase = snapshot.ripplePhase
+        let glarePhase = snapshot.glarePhase
 
         let glassSize = WaterGlassMetrics.glassSize
         let waterTop = glassSize.height * (1 - fraction)
@@ -128,27 +87,6 @@ private extension WaterGlassView {
             widthFraction: widthFraction,
             surfaceMaskAspect: surfaceMaskAspect
         )
-
-        let glarePhase: Double = {
-            if frozenPhase != nil {
-                DispatchQueue.main.async {
-                    lastTimelineTime = nil
-                }
-                return glarePhaseAccumulator
-            } else {
-                let last = lastTimelineTime ?? now
-                let delta = max(0, now - last)
-                let updated = glarePhaseAccumulator + delta * Self.glareSpeed
-                var normalized = updated.truncatingRemainder(dividingBy: 2 * .pi)
-                if normalized < 0 { normalized += 2 * .pi }
-                DispatchQueue.main.async {
-                    glarePhaseAccumulator = updated
-                    glarePhaseValue = normalized
-                    lastTimelineTime = now
-                }
-                return updated
-            }
-        }()
 
         return makeGlassStack(
             fraction: fraction,
@@ -366,11 +304,87 @@ private extension WaterGlassView {
     }
 
     func clamp01(_ x: CGFloat) -> CGFloat { max(0, min(1, x)) }
+}
 
-    func easeOutCubic(_ t: Double) -> Double {
+private struct WaterGlassAnimator {
+    private let levelAnimDuration: Double = 1.5
+
+    private var displayedFraction: CGFloat = 0
+    private var levelAnimFrom: CGFloat = 0
+    private var levelAnimTo: CGFloat = 0
+    private var levelAnimStart: Double? = nil
+    private var glarePhaseAccumulator: Double = 0
+    private var lastTimelineTime: Double? = nil
+
+    mutating func configure(initialFraction: CGFloat) {
+        let clamped = clamp(initialFraction)
+        displayedFraction = clamped
+        levelAnimFrom = clamped
+        levelAnimTo = clamped
+        levelAnimStart = nil
+        glarePhaseAccumulator = 0
+        lastTimelineTime = nil
+    }
+
+    mutating func updateTargetFraction(_ target: CGFloat, now: Double) {
+        let clampedTarget = clamp(target)
+        let current: CGFloat
+        if let start = levelAnimStart {
+            let raw = max(0, min(1, (now - start) / levelAnimDuration))
+            let eased = easeOutCubic(raw)
+            current = clamp(levelAnimFrom + CGFloat(eased) * (levelAnimTo - levelAnimFrom))
+        } else {
+            current = displayedFraction
+        }
+        levelAnimFrom = current
+        levelAnimTo = clampedTarget
+        levelAnimStart = now
+    }
+
+    mutating func snapshot(now: Double, frozenPhase: Double?) -> Snapshot {
+        let fraction: CGFloat
+        if let start = levelAnimStart {
+            let raw = max(0, min(1, (now - start) / levelAnimDuration))
+            let eased = easeOutCubic(raw)
+            fraction = clamp(levelAnimFrom + CGFloat(eased) * (levelAnimTo - levelAnimFrom))
+            if raw >= 1 {
+                levelAnimStart = nil
+                displayedFraction = clamp(levelAnimTo)
+            }
+        } else {
+            fraction = clamp(displayedFraction)
+        }
+
+        let ripplePhase = frozenPhase ?? (WaterGlassView.rippleSeed + now * WaterGlassView.waveSpeed)
+        let glarePhase: Double = {
+            if frozenPhase != nil {
+                lastTimelineTime = nil
+                return glarePhaseAccumulator
+            } else {
+                let last = lastTimelineTime ?? now
+                let delta = max(0, now - last)
+                let updated = glarePhaseAccumulator + delta * WaterGlassView.glareSpeed
+                glarePhaseAccumulator = updated
+                lastTimelineTime = now
+                return updated
+            }
+        }()
+
+        return Snapshot(fraction: fraction, ripplePhase: ripplePhase, glarePhase: glarePhase)
+    }
+
+    private func clamp(_ value: CGFloat) -> CGFloat { max(0, min(1, value)) }
+
+    private func easeOutCubic(_ t: Double) -> Double {
         let u = max(0.0, min(1.0, t))
         let inv = 1.0 - u
         return 1.0 - inv * inv * inv
+    }
+
+    struct Snapshot {
+        let fraction: CGFloat
+        let ripplePhase: Double
+        let glarePhase: Double
     }
 }
 
