@@ -70,10 +70,15 @@ struct ContentView: View {
         if !muteTapSound { sfx.playSplash() }
         viewModel.intakeOz = step.newValue
 
-        // Reschedule notifications to be 1 hour from now and then hourly within the window
-        rescheduleNotifications(lastDrinkDate: Date())
+        if step.reachedGoal {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { playSuccessHaptic() }
+            // Stop today's notifications and schedule only tomorrow since the goal is met
+            scheduleNotificationsForTomorrow()
+        } else {
+            // Reschedule notifications to be 1 hour from now and then hourly within the window
+            rescheduleNotifications(lastDrinkDate: Date())
+        }
 
-        if step.reachedGoal { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { playSuccessHaptic() } }
         if viewModel.lastIntakeDateString.isEmpty { viewModel.lastIntakeDateString = todayString() }
     }
 
@@ -129,6 +134,7 @@ struct ContentView: View {
             Button("Reset", role: .destructive) {
                 viewModel.intakeOz = 0
                 viewModel.lastIntakeDateString = todayString()
+                rescheduleNotifications(lastDrinkDate: Date())
             }
         } message: { Text("This will set today's filled amount back to 0 oz.") }
         .sheet(isPresented: $showNotificationSettings) {
@@ -237,6 +243,19 @@ private extension ContentView {
                 endHour: endHour,
                 soundFile: sound,
                 lastDrinkDate: lastDrinkDate
+            )
+        }
+    }
+    func scheduleNotificationsForTomorrow() {
+        let scheduler = notificationScheduler
+        let startHour = notifStartHour
+        let endHour = notifEndHour
+        let sound = notifSoundFile
+        DispatchQueue.global(qos: .userInitiated).async {
+            scheduler.scheduleForTomorrow(
+                startHour: startHour,
+                endHour: endHour,
+                soundFile: sound
             )
         }
     }

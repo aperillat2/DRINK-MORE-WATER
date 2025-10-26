@@ -5,6 +5,7 @@ import UserNotifications
 protocol NotificationScheduling {
     func requestAuthorization() async
     func scheduleForTodayAndTomorrow(startHour: Int, endHour: Int, soundFile: String, lastDrinkDate: Date?)
+    func scheduleForTomorrow(startHour: Int, endHour: Int, soundFile: String)
 }
 
 protocol UserNotificationCentering {
@@ -155,6 +156,59 @@ final class NotificationScheduler: NotificationScheduling {
         for (index, time) in filteredToday.enumerated() {
             schedule(date: time, id: "today_\(index)")
         }
+        for (index, time) in tomorrowTimes.enumerated() {
+            schedule(date: time, id: "tomorrow_\(index)")
+        }
+    }
+
+    func scheduleForTomorrow(startHour: Int, endHour: Int, soundFile: String) {
+        let center = centerProvider()
+        center.removeAllPendingNotificationRequests()
+        center.resetBadge()
+
+        let today = now()
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today.addingTimeInterval(86400)
+
+        func hourlyTimes(for day: Date) -> [Date] {
+            guard let start = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: day),
+                  let end = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: day) else { return [] }
+            var times: [Date] = []
+            var t = start
+            while t <= end {
+                times.append(t)
+                t = calendar.date(byAdding: .hour, value: 1, to: t) ?? t.addingTimeInterval(3600)
+            }
+            return times
+        }
+
+        let tomorrowTimes = hourlyTimes(for: tomorrow)
+
+        let resolvedName = resolveSoundFilename(baseName: soundFile)
+        let sound: UNNotificationSound? = {
+            if let name = resolvedName {
+                return UNNotificationSound(named: UNNotificationSoundName(name))
+            }
+            return .default
+        }()
+
+        func makeContent(badge: Int) -> UNMutableNotificationContent {
+            let content = UNMutableNotificationContent()
+            content.title = "Drink more water"
+            content.body = "Tap the glass when you've had a drink."
+            content.sound = sound
+            content.badge = NSNumber(value: badge)
+            return content
+        }
+
+        var badgeCount = 0
+        func schedule(date: Date, id: String) {
+            badgeCount += 1
+            let components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+            let request = UNNotificationRequest(identifier: id, content: makeContent(badge: badgeCount), trigger: trigger)
+            center.add(request)
+        }
+
         for (index, time) in tomorrowTimes.enumerated() {
             schedule(date: time, id: "tomorrow_\(index)")
         }
