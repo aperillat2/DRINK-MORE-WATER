@@ -6,6 +6,7 @@ protocol NotificationScheduling {
     func requestAuthorization() async
     func scheduleForTodayAndTomorrow(startHour: Int, endHour: Int, soundFile: String, lastDrinkDate: Date?)
     func scheduleForTomorrow(startHour: Int, endHour: Int, soundFile: String)
+    func cancelAll()
 }
 
 protocol UserNotificationCentering {
@@ -159,6 +160,12 @@ final class NotificationScheduler: NotificationScheduling {
         for (index, time) in tomorrowTimes.enumerated() {
             schedule(date: time, id: "tomorrow_\(index)")
         }
+    }
+
+    func cancelAll() {
+        let center = centerProvider()
+        center.removeAllPendingNotificationRequests()
+        center.resetBadge()
     }
 
     func scheduleForTomorrow(startHour: Int, endHour: Int, soundFile: String) {

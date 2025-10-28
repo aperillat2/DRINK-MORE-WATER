@@ -1,7 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "water_drop.png",
+      "filename" : "AppIcon_Light_1024.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -13,6 +13,7 @@
           "value" : "dark"
         }
       ],
+      "filename" : "AppIcon_Dark_1024.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"

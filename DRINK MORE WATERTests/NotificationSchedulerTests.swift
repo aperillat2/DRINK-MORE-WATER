@@ -59,6 +59,28 @@ struct NotificationSchedulerTests {
         let firstTriggerHour = today.first.flatMap { hour(from: $0) }
         #expect(firstTriggerHour == 7)
     }
+
+    @Test("scheduleForTomorrow clears pending and only schedules tomorrow")
+    func scheduleForTomorrowOnlySchedulesNextDay() async throws {
+        let nowDate = date("2000-01-01T12:00:00Z")
+        let fakeCenter = FakeUserNotificationCenter()
+        let scheduler = NotificationScheduler(
+            centerProvider: { fakeCenter },
+            calendar: calendar,
+            now: { nowDate }
+        )
+
+        scheduler.scheduleForTomorrow(startHour: 7, endHour: 9, soundFile: "sound")
+
+        #expect(fakeCenter.removedPending == true)
+        #expect(fakeCenter.badgeResetCount == 1)
+        let scheduled = try #require(fakeCenter.requests)
+        let today = scheduled.filter { $0.identifier.hasPrefix("today_") }
+        let tomorrow = scheduled.filter { $0.identifier.hasPrefix("tomorrow_") }
+        #expect(today.isEmpty)
+        let hours = tomorrow.compactMap { hour(from: $0) }
+        #expect(hours == [7, 8, 9])
+    }
 }
 
 private final class FakeUserNotificationCenter: UserNotificationCentering {
