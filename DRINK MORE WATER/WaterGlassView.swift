@@ -24,6 +24,9 @@ struct WaterGlassView: View {
     @Environment(\.displayScale) private var displayScale: CGFloat
 
     @StateObject private var animator = WaterGlassAnimator()
+    @StateObject private var snapshotCache = SnapshotCache()
+    @State private var shimmerImage: Image?
+    @State private var innerShadowImage: Image?
 
     static let waveSpeed: Double = 2.3
     static let glareSpeed: Double = 0.01
@@ -36,29 +39,59 @@ struct WaterGlassView: View {
                 updateAnimationState(with: newValue)
             }
     }
+
+    private var shouldAnimate: Bool {
+        frozenPhase == nil
+    }
 }
 
 private extension WaterGlassView {
     func configureOnAppear() {
         let clamped = clamp01(targetFraction)
         animator.configure(initialFraction: clamped)
-
+        if shimmerImage == nil {
+            shimmerImage = GlassOverlayFactory.shimmerImage(size: WaterGlassMetrics.glassSize)
+        }
+        if innerShadowImage == nil {
+            innerShadowImage = GlassOverlayFactory.innerShadowImage(size: WaterGlassMetrics.glassSize)
+        }
     }
 
     func updateAnimationState(with newValue: CGFloat) {
         animator.updateTargetFraction(clamp01(newValue), now: Date.timeIntervalSinceReferenceDate)
     }
 
-    var glassVisual: some View {
+    var glassVisual: AnyView {
         let fps: Double = 30.0
-        return TimelineView(.periodic(from: .now, by: 1.0 / fps)) { context in
-            let now = context.date.timeIntervalSinceReferenceDate
-            buildGlassContent(now: now)
+        if shouldAnimate {
+            return AnyView(
+                TimelineView(.periodic(from: .now, by: 1.0 / fps)) { context in
+                    let now = context.date.timeIntervalSinceReferenceDate
+                    buildGlassContent(now: now)
+                }
+            )
+        } else {
+            return buildStaticGlassContent()
         }
     }
 
     func buildGlassContent(now: Double) -> AnyView {
         let snapshot = animator.snapshot(now: now, frozenPhase: frozenPhase)
+        snapshotCache.snapshot = snapshot
+        snapshotCache.timestamp = now
+        return makeGlassContent(from: snapshot, now: now)
+    }
+
+    func buildStaticGlassContent() -> AnyView {
+        if let snapshot = snapshotCache.snapshot {
+            return makeGlassContent(from: snapshot, now: snapshotCache.timestamp)
+        } else {
+            let now = Date.timeIntervalSinceReferenceDate
+            return buildGlassContent(now: now)
+        }
+    }
+
+    func makeGlassContent(from snapshot: WaterGlassAnimator.Snapshot, now: Double) -> AnyView {
         let fraction = snapshot.fraction
         let ripplePhase = snapshot.ripplePhase
         let glarePhase = snapshot.glarePhase
@@ -78,28 +111,28 @@ private extension WaterGlassView {
         )
 
         return makeGlassStack(
+            now: now,
+            fillMask: fillMask,
+            hideUnderwaterText: hideUnderwaterText,
             fraction: fraction,
             ripplePhase: ripplePhase,
             glarePhase: glarePhase,
             widthFraction: widthFraction,
             surfaceMaskAspect: surfaceMaskAspect,
-            waterTopAligned: waterTopAligned,
-            now: now,
-            fillMask: fillMask,
-            hideUnderwaterText: hideUnderwaterText
+            waterTopAligned: waterTopAligned
         )
     }
 
     func makeGlassStack(
+        now: Double,
+        fillMask: AnyView,
+        hideUnderwaterText: Bool,
         fraction: CGFloat,
         ripplePhase: Double,
         glarePhase: Double,
         widthFraction: CGFloat,
         surfaceMaskAspect: CGFloat,
-        waterTopAligned: CGFloat,
-        now: Double,
-        fillMask: AnyView,
-        hideUnderwaterText: Bool
+        waterTopAligned: CGFloat
     ) -> AnyView {
         let glassSize = WaterGlassMetrics.glassSize
         return AnyView(
@@ -146,17 +179,37 @@ private extension WaterGlassView {
                 let contentY = round(WaterGlassMetrics.glassVerticalNudge / px) * px
                 let shimmerMaskBiasY: CGFloat = 0
 
-                GlassLightShimmer(glassSize: glassSize)
-                    .offset(y: contentY)
-                    .mask(glassMaskForOverlays(biasY: shimmerMaskBiasY))
-                    .blendMode(.screen)
-                    .allowsHitTesting(false)
+                if let shimmerImage {
+                    shimmerImage
+                        .resizable()
+                        .frame(width: glassSize.width, height: glassSize.height)
+                        .offset(y: contentY)
+                        .mask(glassMaskForOverlays(biasY: shimmerMaskBiasY))
+                        .blendMode(.screen)
+                        .allowsHitTesting(false)
+                } else {
+                    GlassLightShimmerCanvas(glassSize: glassSize)
+                        .offset(y: contentY)
+                        .mask(glassMaskForOverlays(biasY: shimmerMaskBiasY))
+                        .blendMode(.screen)
+                        .allowsHitTesting(false)
+                }
 
-                GlassInnerShadow(glassSize: glassSize)
-                    .offset(y: contentY)
-                    .mask(glassMaskForOverlays(biasY: shimmerMaskBiasY))
-                    .blendMode(.multiply)
-                    .allowsHitTesting(false)
+                if let innerShadowImage {
+                    innerShadowImage
+                        .resizable()
+                        .frame(width: glassSize.width, height: glassSize.height)
+                        .offset(y: contentY)
+                        .mask(glassMaskForOverlays(biasY: shimmerMaskBiasY))
+                        .blendMode(.multiply)
+                        .allowsHitTesting(false)
+                } else {
+                    GlassInnerShadowCanvas(glassSize: glassSize)
+                        .offset(y: contentY)
+                        .mask(glassMaskForOverlays(biasY: shimmerMaskBiasY))
+                        .blendMode(.multiply)
+                        .allowsHitTesting(false)
+                }
 
                 Image("empty_glass")
                     .resizable()
@@ -314,6 +367,11 @@ private extension WaterGlassView {
     }
 
     func clamp01(_ x: CGFloat) -> CGFloat { max(0, min(1, x)) }
+}
+
+private final class SnapshotCache: ObservableObject {
+    var snapshot: WaterGlassAnimator.Snapshot?
+    var timestamp: Double = Date.timeIntervalSinceReferenceDate
 }
 
 @MainActor
@@ -594,7 +652,7 @@ private struct WaterSurfaceTexture: View {
     }
 }
 
-private struct GlassLightShimmer: View {
+private struct GlassLightShimmerCanvas: View {
     let glassSize: CGSize
     var body: some View {
         Canvas { ctx, size in
@@ -649,7 +707,7 @@ private struct GlassLightShimmer: View {
     }
 }
 
-private struct GlassInnerShadow: View {
+private struct GlassInnerShadowCanvas: View {
     let glassSize: CGSize
     var body: some View {
         Canvas { ctx, size in
@@ -732,6 +790,28 @@ private struct WaterFillRenderer: View {
     }
 }
 
+@MainActor
+private enum GlassOverlayFactory {
+    static func shimmerImage(size: CGSize) -> Image? {
+        render(content: GlassLightShimmerCanvas(glassSize: size))
+    }
+
+    static func innerShadowImage(size: CGSize) -> Image? {
+        render(content: GlassInnerShadowCanvas(glassSize: size))
+    }
+
+    private static func render<Content: View>(content: Content) -> Image? {
+        if #available(iOS 16.0, *) {
+            let renderer = ImageRenderer(content: content)
+            renderer.scale = UIScreen.main.scale
+            if let uiImage = renderer.uiImage {
+                return Image(uiImage: uiImage)
+            }
+        }
+        return nil
+    }
+}
+
 private extension Color {
     func mix(with color: Color, fraction: Double) -> Color {
         let f = min(max(fraction, 0), 1)
@@ -808,17 +888,27 @@ private struct RefractedTextView: View {
             let seamYRaw = clamped
             let seamY = round(seamYRaw / px) * px
 
-            let sliceStep: CGFloat = 1
-            let sy = imgH / fittedRect.height
-
+            let sliceStep: CGFloat = max(1, px)
             context.withCGContext { cg in
                 cg.saveGState()
-                cg.clip(to: CGRect(
+                let canvasHeight = glassSize.height
+                cg.translateBy(x: 0, y: canvasHeight)
+                cg.scaleBy(x: 1, y: -1)
+
+                let clipHeight = max(fittedRect.maxY - seamY, 0)
+                let invertedClip = CGRect(
                     x: fittedRect.minX,
-                    y: seamY,
+                    y: canvasHeight - fittedRect.maxY,
                     width: fittedRect.width,
-                    height: max(fittedRect.maxY - seamY, 0)
-                ))
+                    height: clipHeight
+                )
+                cg.clip(to: invertedClip)
+                let baseDrawRect = CGRect(
+                    x: fittedRect.minX,
+                    y: canvasHeight - fittedRect.maxY,
+                    width: fittedRect.width,
+                    height: fittedRect.height
+                )
 
                 let seamRel = max(0, min(1, (seamYRaw - fittedRect.minY) / max(fittedRect.height, 1)))
                 let seamPhase = ripplePhase + Double(seamRel) * 12.0
@@ -830,14 +920,22 @@ private struct RefractedTextView: View {
                     let absProg = max(0, min(1, (y - fittedRect.minY) / max(fittedRect.height, 1)))
                     let phase = ripplePhase + Double(absProg) * 12.0
                     let offset = CGFloat(sin(phase) * Double(rippleAmplitude)) - seamBaseline
-                    let srcY = (y - fittedRect.minY) * sy
-                    let srcH = bandHeight * sy
-                    let src = CGRect(x: 0, y: srcY, width: imgW, height: srcH).integral
-                    guard let slice = baseImage.cropping(to: src) else { y += sliceStep; continue }
+                    if bandHeight <= 0 { break }
 
-                    let dst = CGRect(x: fittedRect.minX + offset, y: y, width: fittedRect.width, height: bandHeight)
-                    cg.draw(slice, in: dst)
-                    y += sliceStep
+                    let bandClip = CGRect(
+                        x: fittedRect.minX,
+                        y: canvasHeight - (y + bandHeight),
+                        width: fittedRect.width,
+                        height: bandHeight
+                    )
+
+                    cg.saveGState()
+                    cg.clip(to: bandClip)
+                    let drawRect = baseDrawRect.offsetBy(dx: offset, dy: 0)
+                    cg.draw(baseImage, in: drawRect)
+                    cg.restoreGState()
+
+                    y += bandHeight
                 }
 
                 cg.restoreGState()
@@ -853,42 +951,79 @@ private struct RefractedTextView: View {
     }
 }
 
-private final class GlassWidthAnalyzer {
+final class GlassWidthAnalyzer {
     static let shared = GlassWidthAnalyzer()
-    private var cgImage: CGImage?
-    private let alphaThreshold: UInt8 = 10
 
-    init() { cgImage = UIImage(named: "glass_mask")?.cgImage }
+    private static let alphaThreshold: UInt8 = 10
+    private let widthFractions: [CGFloat]
+    private let imageHeight: Int
+
+    init(maskImage: CGImage? = UIImage(named: "glass_mask")?.cgImage) {
+        guard let maskImage else {
+            widthFractions = []
+            imageHeight = 0
+            return
+        }
+
+        imageHeight = maskImage.height
+        widthFractions = GlassWidthAnalyzer.computeWidthFractions(from: maskImage, alphaThreshold: Self.alphaThreshold)
+    }
 
     func widthFraction(atYFraction yFrac: CGFloat) -> CGFloat? {
-        guard let cgImage else { return nil }
-        let W = cgImage.width
-        let H = cgImage.height
-        let row = max(0, min(H - 1, Int(round(yFrac * CGFloat(H - 1)))))
+        guard !widthFractions.isEmpty, imageHeight > 0 else { return nil }
+        let clamped = max(0, min(1, yFrac))
+        let row = max(0, min(imageHeight - 1, Int(round(clamped * CGFloat(imageHeight - 1)))))
+        return widthFractions[row]
+    }
 
-        guard let rowImg = cgImage.cropping(to: CGRect(x: 0, y: row, width: W, height: 1)) else { return nil }
-
-        let bytesPerPixel = 4
-        let bytesPerRow = bytesPerPixel * W
+    static func computeWidthFractions(from image: CGImage, alphaThreshold: UInt8 = GlassWidthAnalyzer.alphaThreshold) -> [CGFloat] {
+        let width = image.width
+        let height = image.height
         guard let ctx = CGContext(
             data: nil,
-            width: W,
-            height: 1,
+            width: width,
+            height: height,
             bitsPerComponent: 8,
-            bytesPerRow: bytesPerRow,
+            bytesPerRow: width * 4,
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
+        ) else {
+            return Array(repeating: 1, count: height)
+        }
 
-        ctx.draw(rowImg, in: CGRect(x: 0, y: 0, width: W, height: 1))
-        guard let data = ctx.data else { return nil }
-        let buf = data.bindMemory(to: UInt8.self, capacity: bytesPerRow)
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let data = ctx.data else {
+            return Array(repeating: 1, count: height)
+        }
 
-        var left: Int? = nil, right: Int? = nil
-        for x in 0..<W where buf[x*bytesPerPixel+3] > alphaThreshold { left = x; break }
-        for x in stride(from: W-1, through: 0, by: -1) where buf[x*bytesPerPixel+3] > alphaThreshold { right = x; break }
-        guard let l = left, let r = right, r >= l else { return 0 }
-        return CGFloat(r - l + 1) / CGFloat(W)
+        let buffer = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+        var fractions: [CGFloat] = Array(repeating: 1, count: height)
+
+        for row in 0..<height {
+            let rowOffset = row * width * 4
+            var left: Int?
+            var right: Int?
+
+            for x in 0..<width where buffer[rowOffset + x * 4 + 3] > alphaThreshold {
+                left = x
+                break
+            }
+            if left == nil {
+                fractions[row] = 0
+                continue
+            }
+            for x in stride(from: width - 1, through: 0, by: -1) where buffer[rowOffset + x * 4 + 3] > alphaThreshold {
+                right = x
+                break
+            }
+            if let l = left, let r = right, r >= l {
+                fractions[row] = CGFloat(r - l + 1) / CGFloat(width)
+            } else {
+                fractions[row] = 0
+            }
+        }
+
+        return fractions
     }
 }
 
