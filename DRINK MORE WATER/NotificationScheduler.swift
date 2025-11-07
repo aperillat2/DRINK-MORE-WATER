@@ -4,8 +4,8 @@ import UserNotifications
 
 protocol NotificationScheduling {
     func requestAuthorization() async
-    func scheduleForTodayAndTomorrow(startHour: Int, endHour: Int, soundFile: String, lastDrinkDate: Date?)
-    func scheduleForTomorrow(startHour: Int, endHour: Int, soundFile: String)
+    func scheduleForTodayAndTomorrow(startHour: Int, endHour: Int, intervalMinutes: Int, soundFile: String, lastDrinkDate: Date?)
+    func scheduleForTomorrow(startHour: Int, endHour: Int, intervalMinutes: Int, soundFile: String)
     func cancelAll()
 }
 
@@ -75,33 +75,61 @@ final class NotificationScheduler: NotificationScheduling {
     /// - Parameters:
     ///   - startHour: first hour (0-23) to allow notifications
     ///   - endHour: last hour (0-23) to allow notifications
+    ///   - intervalMinutes: spacing between notifications in minutes (0 = once per day, otherwise minimum 1)
     ///   - soundFile: bundle sound filename (e.g., "drink more water.caf")
-    ///   - lastDrinkDate: if provided, first notification is 1 hour after this time (clamped to window)
-    func scheduleForTodayAndTomorrow(startHour: Int, endHour: Int, soundFile: String, lastDrinkDate: Date?) {
+    ///   - lastDrinkDate: if provided, first notification is intervalMinutes after this time (clamped to window)
+    func scheduleForTodayAndTomorrow(startHour: Int, endHour: Int, intervalMinutes: Int, soundFile: String, lastDrinkDate: Date?) {
         let center = centerProvider()
         center.removeAllPendingNotificationRequests()
         center.resetBadge()
 
         let today = now()
+        if intervalMinutes < 0 {
+            return
+        }
+        let minuteStep = intervalMinutes > 0 ? intervalMinutes : 0
+        let intervalSeconds: TimeInterval = minuteStep > 0 ? TimeInterval(minuteStep * 60) : 24 * 60 * 60
 
-        func hourlyTimes(for day: Date) -> [Date] {
+        func times(for day: Date) -> [Date] {
             guard let start = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: day),
-                  let end = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: day) else { return [] }
-            var times: [Date] = []
+                  let end = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: day),
+                  start <= end else { return [] }
+            if minuteStep == 0 {
+                return [start]
+            }
+            var slots: [Date] = []
             var t = start
             while t <= end {
-                times.append(t)
-                t = calendar.date(byAdding: .hour, value: 1, to: t) ?? t.addingTimeInterval(3600)
+                slots.append(t)
+                let next = calendar.date(byAdding: .minute, value: minuteStep, to: t) ?? t.addingTimeInterval(intervalSeconds)
+                if next == t { break }
+                t = next
             }
-            return times
+            return slots
         }
 
         let windowStart = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: today)
         let windowEnd = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: today)
 
+        func alignDailyReminder(_ date: Date) -> Date? {
+            guard let dayStart = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: date),
+                  let dayEnd = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: date),
+                  dayStart <= dayEnd else { return nil }
+            if date < dayStart { return dayStart }
+            if date > dayEnd {
+                guard let nextDay = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
+                return calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: nextDay)
+            }
+            let comps = calendar.dateComponents([.hour, .minute], from: date)
+            return calendar.date(bySettingHour: comps.hour ?? startHour, minute: comps.minute ?? 0, second: 0, of: date)
+        }
+
         func clampedFirstReminder() -> Date? {
             guard let lastDrinkDate else { return nil }
-            let candidate = lastDrinkDate.addingTimeInterval(3600)
+            let candidate = lastDrinkDate.addingTimeInterval(intervalSeconds)
+            if minuteStep == 0 {
+                return alignDailyReminder(candidate)
+            }
             guard let windowStart, let windowEnd else { return nil }
             if candidate < windowStart { return windowStart }
             if candidate > windowEnd { return nil }
@@ -109,24 +137,51 @@ final class NotificationScheduler: NotificationScheduling {
         }
 
         let firstFromDrink = clampedFirstReminder()
-        let todayTimes = hourlyTimes(for: today)
+        let todayTimes = times(for: today)
 
         let filteredToday: [Date] = {
-            if let first = firstFromDrink {
-                var result: [Date] = [first]
-                var next = calendar.nextDate(after: first, matching: DateComponents(minute: 0, second: 0), matchingPolicy: .strict, direction: .forward) ?? first.addingTimeInterval(3600)
-                while let end = windowEnd, next <= end {
-                    if next > first { result.append(next) }
-                    next = calendar.date(byAdding: .hour, value: 1, to: next) ?? next.addingTimeInterval(3600)
+            guard let windowEnd else { return todayTimes.filter { $0 > today } }
+            if minuteStep == 0 {
+                if let first = firstFromDrink, calendar.isDate(first, inSameDayAs: today), first > today {
+                    return [first]
                 }
-                return result.filter { $0 > today }
+                return todayTimes.filter { $0 > today }
+            }
+            if let first = firstFromDrink {
+                var result: [Date] = []
+                if first > today { result.append(first) }
+                var next = first
+                while true {
+                    let candidate = calendar.date(byAdding: .minute, value: minuteStep, to: next) ?? next.addingTimeInterval(intervalSeconds)
+                    if candidate == next { break }
+                    next = candidate
+                    if next > windowEnd { break }
+                    if next > today { result.append(next) }
+                }
+                return result
             } else {
                 return todayTimes.filter { $0 > today }
             }
         }()
 
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today.addingTimeInterval(86400)
-        let tomorrowTimes = hourlyTimes(for: tomorrow)
+        let tomorrowTimes: [Date] = {
+            if minuteStep == 0 {
+                if let first = firstFromDrink {
+                    if calendar.isDate(first, inSameDayAs: tomorrow) {
+                        return [first]
+                    }
+                    if calendar.isDate(first, inSameDayAs: today),
+                       let next = alignDailyReminder(first.addingTimeInterval(intervalSeconds)),
+                       calendar.isDate(next, inSameDayAs: tomorrow) {
+                        return [next]
+                    }
+                }
+                return times(for: tomorrow)
+            } else {
+                return times(for: tomorrow)
+            }
+        }()
 
         let resolvedName = resolveSoundFilename(baseName: soundFile)
         let sound: UNNotificationSound? = {
@@ -168,27 +223,43 @@ final class NotificationScheduler: NotificationScheduling {
         center.resetBadge()
     }
 
-    func scheduleForTomorrow(startHour: Int, endHour: Int, soundFile: String) {
+    /// - Parameters:
+    ///   - startHour: first hour (0-23) to allow notifications
+    ///   - endHour: last hour (0-23) to allow notifications
+    ///   - intervalMinutes: spacing between notifications in minutes (0 = once per day, otherwise minimum 1)
+    ///   - soundFile: bundle sound filename (e.g., "drink more water.caf")
+    func scheduleForTomorrow(startHour: Int, endHour: Int, intervalMinutes: Int, soundFile: String) {
         let center = centerProvider()
         center.removeAllPendingNotificationRequests()
         center.resetBadge()
 
         let today = now()
+        if intervalMinutes < 0 {
+            return
+        }
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today.addingTimeInterval(86400)
 
-        func hourlyTimes(for day: Date) -> [Date] {
+        let minuteStep = intervalMinutes > 0 ? intervalMinutes : 0
+
+        func times(for day: Date) -> [Date] {
             guard let start = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: day),
-                  let end = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: day) else { return [] }
+                  let end = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: day),
+                  start <= end else { return [] }
+            if minuteStep == 0 {
+                return [start]
+            }
             var times: [Date] = []
             var t = start
             while t <= end {
                 times.append(t)
-                t = calendar.date(byAdding: .hour, value: 1, to: t) ?? t.addingTimeInterval(3600)
+                let next = calendar.date(byAdding: .minute, value: minuteStep, to: t) ?? t.addingTimeInterval(TimeInterval(minuteStep * 60))
+                if next == t { break }
+                t = next
             }
             return times
         }
 
-        let tomorrowTimes = hourlyTimes(for: tomorrow)
+        let tomorrowTimes = times(for: tomorrow)
 
         let resolvedName = resolveSoundFilename(baseName: soundFile)
         let sound: UNNotificationSound? = {

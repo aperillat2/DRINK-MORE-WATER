@@ -8,6 +8,7 @@ final class WaterIntakeViewModel: ObservableObject {
     @AppStorage("lastIntakeDate") private var storedLastIntakeDateString: String = ""
     @AppStorage("dailyGoalOz") private var storedDailyGoalOz: Int = 80
     @AppStorage("goalMetDate") private var storedGoalMetDateString: String = ""
+    @AppStorage("ozPerTap") private var storedOzPerTap: Int = 10
 
     @Published var intakeOz: Int = 0 {
         didSet { storedIntakeOz = intakeOz }
@@ -21,12 +22,23 @@ final class WaterIntakeViewModel: ObservableObject {
     @Published var goalMetDateString: String = "" {
         didSet { storedGoalMetDateString = goalMetDateString }
     }
+    @Published var ozPerTap: Int = 10 {
+        didSet {
+            let clamped = min(max(ozPerTap, 5), 20)
+            if clamped != ozPerTap {
+                ozPerTap = clamped
+                return
+            }
+            storedOzPerTap = ozPerTap
+        }
+    }
 
     init() {
         intakeOz = storedIntakeOz
         lastIntakeDateString = storedLastIntakeDateString
         dailyGoalOz = storedDailyGoalOz
         goalMetDateString = storedGoalMetDateString
+        ozPerTap = storedOzPerTap
     }
 
     var isGoalMetToday: Bool {
@@ -40,8 +52,6 @@ final class WaterIntakeViewModel: ObservableObject {
     func clearGoalMetFlag() {
         goalMetDateString = ""
     }
-
-    let ozPerTap: Int = 10
 
     func resetIfNeeded() {
         let today = DateUtils.todayString()

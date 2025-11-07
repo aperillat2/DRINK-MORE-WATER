@@ -16,10 +16,12 @@ struct NotificationSchedulerTests {
         ISO8601DateFormatter().date(from: iso)!
     }
 
-    @Test("schedules hourly reminders after now when no last drink", arguments: [
-        ("2000-01-01T07:30:00Z", 7, 9, [8, 9], [7, 8, 9])
+    @Test("schedules reminders after now using selected interval", arguments: [
+        ("2000-01-01T07:30:00Z", 7, 9, 60, [(8, 0), (9, 0)], [(7, 0), (8, 0), (9, 0)]),
+        ("2000-01-01T07:10:00Z", 7, 9, 30, [(7, 30), (8, 0), (8, 30), (9, 0)], [(7, 0), (7, 30), (8, 0), (8, 30), (9, 0)]),
+        ("2000-01-01T07:10:00Z", 7, 9, 0, [], [(7, 0)])
     ])
-    func scheduleWithoutLastDrink(nowString: String, startHour: Int, endHour: Int, expectedTodayHours: [Int], expectedTomorrowHours: [Int]) async throws {
+    func scheduleWithoutLastDrink(nowString: String, startHour: Int, endHour: Int, intervalMinutes: Int, expectedTodayTimes: [(Int, Int)], expectedTomorrowTimes: [(Int, Int)]) async throws {
         let nowDate = date(nowString)
         let fakeCenter = FakeUserNotificationCenter()
         let scheduler = NotificationScheduler(
@@ -28,17 +30,17 @@ struct NotificationSchedulerTests {
             now: { nowDate }
         )
 
-        scheduler.scheduleForTodayAndTomorrow(startHour: startHour, endHour: endHour, soundFile: "sound", lastDrinkDate: nil)
+        scheduler.scheduleForTodayAndTomorrow(startHour: startHour, endHour: endHour, intervalMinutes: intervalMinutes, soundFile: "sound", lastDrinkDate: nil)
 
         #expect(fakeCenter.removedPending == true)
         let scheduled = try #require(fakeCenter.requests)
         let today = scheduled.filter { $0.identifier.hasPrefix("today_") }
         let tomorrow = scheduled.filter { $0.identifier.hasPrefix("tomorrow_") }
 
-        let todayHours = today.compactMap { hour(from: $0) }
-        let tomorrowHours = tomorrow.compactMap { hour(from: $0) }
-        #expect(todayHours == expectedTodayHours)
-        #expect(tomorrowHours == expectedTomorrowHours)
+        let todayTimes = today.compactMap { timeComponents(from: $0) }
+        let tomorrowTimes = tomorrow.compactMap { timeComponents(from: $0) }
+        #expect(formattedTimes(todayTimes) == formattedTimes(expectedTodayTimes))
+        #expect(formattedTimes(tomorrowTimes) == formattedTimes(expectedTomorrowTimes))
     }
 
     @Test("uses window start when last drink is before notification window")
@@ -52,12 +54,33 @@ struct NotificationSchedulerTests {
             now: { nowDate }
         )
 
-        scheduler.scheduleForTodayAndTomorrow(startHour: 7, endHour: 9, soundFile: "sound", lastDrinkDate: lastDrink)
+        scheduler.scheduleForTodayAndTomorrow(startHour: 7, endHour: 9, intervalMinutes: 60, soundFile: "sound", lastDrinkDate: lastDrink)
 
         let scheduled = try #require(fakeCenter.requests)
         let today = scheduled.filter { $0.identifier.hasPrefix("today_") }
-        let firstTriggerHour = today.first.flatMap { hour(from: $0) }
-        #expect(firstTriggerHour == 7)
+        let firstTrigger = today.first.flatMap { timeComponents(from: $0) }
+        #expect(formattedTime(firstTrigger) == Optional("07:00"))
+    }
+
+    @Test("daily reminders schedule 24h after last drink within window")
+    func scheduleDailyUsesLastDrink() async throws {
+        let nowDate = date("2000-01-01T10:00:00Z")
+        let lastDrink = date("2000-01-01T08:15:00Z")
+        let fakeCenter = FakeUserNotificationCenter()
+        let scheduler = NotificationScheduler(
+            centerProvider: { fakeCenter },
+            calendar: calendar,
+            now: { nowDate }
+        )
+
+        scheduler.scheduleForTodayAndTomorrow(startHour: 7, endHour: 21, intervalMinutes: 0, soundFile: "sound", lastDrinkDate: lastDrink)
+
+        let scheduled = try #require(fakeCenter.requests)
+        let today = scheduled.filter { $0.identifier.hasPrefix("today_") }
+        let tomorrow = scheduled.filter { $0.identifier.hasPrefix("tomorrow_") }
+        #expect(today.isEmpty)
+        let tomorrowTimes = tomorrow.compactMap { timeComponents(from: $0) }
+        #expect(formattedTimes(tomorrowTimes) == ["08:15"])
     }
 
     @Test("scheduleForTomorrow clears pending and only schedules tomorrow")
@@ -70,7 +93,7 @@ struct NotificationSchedulerTests {
             now: { nowDate }
         )
 
-        scheduler.scheduleForTomorrow(startHour: 7, endHour: 9, soundFile: "sound")
+        scheduler.scheduleForTomorrow(startHour: 7, endHour: 9, intervalMinutes: 60, soundFile: "sound")
 
         #expect(fakeCenter.removedPending == true)
         #expect(fakeCenter.badgeResetCount == 1)
@@ -78,8 +101,8 @@ struct NotificationSchedulerTests {
         let today = scheduled.filter { $0.identifier.hasPrefix("today_") }
         let tomorrow = scheduled.filter { $0.identifier.hasPrefix("tomorrow_") }
         #expect(today.isEmpty)
-        let hours = tomorrow.compactMap { hour(from: $0) }
-        #expect(hours == [7, 8, 9])
+        let times = tomorrow.compactMap { timeComponents(from: $0) }
+        #expect(formattedTimes(times) == ["07:00", "08:00", "09:00"])
     }
 }
 
@@ -110,7 +133,20 @@ private final class FakeUserNotificationCenter: UserNotificationCentering {
     }
 }
 
-private func hour(from request: UNNotificationRequest) -> Int? {
+private func timeComponents(from request: UNNotificationRequest) -> (Int, Int)? {
     guard let trigger = request.trigger as? UNCalendarNotificationTrigger else { return nil }
-    return trigger.dateComponents.hour
+    guard let hour = trigger.dateComponents.hour, let minute = trigger.dateComponents.minute else { return nil }
+    return (hour, minute)
+}
+
+private func formattedTimes(_ times: [(Int, Int)]) -> [String] {
+    times.map(formattedTime)
+}
+
+private func formattedTime(_ time: (Int, Int)) -> String {
+    String(format: "%02d:%02d", time.0, time.1)
+}
+
+private func formattedTime(_ time: (Int, Int)?) -> String? {
+    time.map(formattedTime)
 }

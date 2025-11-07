@@ -28,11 +28,14 @@ struct ContentView: View {
     @Environment(\.displayScale) private var displayScale: CGFloat
 
     @State private var showResetConfirmation: Bool = false
+    @State private var showOzPerTapPicker: Bool = false
 
     // Notification settings (persisted)
     @AppStorage("notifStartHour") private var notifStartHour: Int = 7    // 7 AM
     @AppStorage("notifEndHour") private var notifEndHour: Int = 22       // 10 PM
     @AppStorage("notifSoundFile") private var notifSoundFile: String = "drink more water"
+    @AppStorage("notifIntervalMinutes") private var notifIntervalMinutes: Int = 60
+    @AppStorage("muteNotifications") private var muteNotifications: Bool = false
     @State private var showNotificationSettings: Bool = false
     @AppStorage("muteTapSound") private var muteTapSound: Bool = false
 
@@ -76,7 +79,7 @@ struct ContentView: View {
             cancelTodayAndScheduleTomorrow()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { playSuccessHaptic() }
         } else {
-            // Reschedule notifications to be 1 hour from now and then hourly within the window
+            // Reschedule notifications to fire after the selected interval within the window
             rescheduleNotifications(lastDrinkDate: Date())
         }
 
@@ -95,9 +98,44 @@ struct ContentView: View {
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(.white)
                             .accessibilityIdentifier("intakeLabel")
-                        Text("Tap the glass to add \(viewModel.ozPerTap) oz")
-                            .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.7))
+                        HStack(spacing: 4) {
+                            Text("Tap the glass to add")
+                                .foregroundStyle(.white.opacity(0.7))
+                            Button {
+                                showOzPerTapPicker = true
+                            } label: {
+                                Text("\(viewModel.ozPerTap) oz")
+                                    .fontWeight(.semibold)
+                                    .underline()
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.white)
+                            .accessibilityIdentifier("perTapAmountButton")
+                            .popover(isPresented: $showOzPerTapPicker) {
+                                VStack(spacing: 16) {
+                                    Text("Water Added Per Tap")
+                                        .font(.headline)
+                                    Text("\(viewModel.ozPerTap) oz")
+                                        .font(.largeTitle.weight(.bold))
+                                    Slider(
+                                        value: Binding(
+                                            get: { Double(viewModel.ozPerTap) },
+                                            set: { viewModel.ozPerTap = Int($0.rounded()) }
+                                        ),
+                                        in: 5...20,
+                                        step: 1
+                                    )
+                                    .tint(.blue)
+                                    Text("Choose between 5 and 20 oz.")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                    Button("Done") { showOzPerTapPicker = false }
+                                        .buttonStyle(.borderedProminent)
+                                }
+                                .padding()
+                            }
+                        }
+                        .font(.subheadline)
                     }
                     VStack(spacing: 20) {
                         HStack {
@@ -143,17 +181,19 @@ struct ContentView: View {
             NotificationSettingsView(
                 startHour: $notifStartHour,
                 endHour: $notifEndHour,
+                intervalMinutes: $notifIntervalMinutes,
                 selectedSound: $notifSoundFile,
                 muteTapSound: $muteTapSound,
+                muteNotifications: $muteNotifications,
                 onApply: {
                     // Re-schedule notifications using current or last drink time
                     let lastDrinkDate = Date() // use now as baseline when changing settings
                     rescheduleNotifications(lastDrinkDate: lastDrinkDate)
                 },
-        onResetToday: {
-            showResetConfirmation = true
-        }
-    )
+                onResetToday: {
+                    showResetConfirmation = true
+                }
+            )
         }
         .onAppear {
             viewModel.resetIfNeeded()
@@ -207,6 +247,25 @@ struct ContentView: View {
                 rescheduleNotifications(lastDrinkDate: Date())
             }
         }
+        .onChange(of: notifIntervalMinutes) { _, _ in
+            if viewModel.isGoalMetToday {
+                scheduleNotificationsForTomorrow()
+            } else {
+                rescheduleNotifications(lastDrinkDate: Date())
+            }
+        }
+        .onChange(of: muteNotifications) { _, isMuted in
+            if isMuted {
+                let scheduler = notificationScheduler
+                DispatchQueue.global(qos: .userInitiated).async {
+                    scheduler.cancelAll()
+                }
+            } else if viewModel.isGoalMetToday {
+                scheduleNotificationsForTomorrow()
+            } else {
+                rescheduleNotifications(lastDrinkDate: Date())
+            }
+        }
         .onChange(of: fillFraction) { _, _ in
             surfacePulseStart = Date.timeIntervalSinceReferenceDate
         }
@@ -254,11 +313,17 @@ private extension ContentView {
         let scheduler = notificationScheduler
         let startHour = notifStartHour
         let endHour = notifEndHour
+        if muteNotifications {
+            scheduler.cancelAll()
+            return
+        }
+        let interval = notifIntervalMinutes
         let sound = notifSoundFile
         DispatchQueue.global(qos: .userInitiated).async {
             scheduler.scheduleForTodayAndTomorrow(
                 startHour: startHour,
                 endHour: endHour,
+                intervalMinutes: interval,
                 soundFile: sound,
                 lastDrinkDate: lastDrinkDate
             )
@@ -268,11 +333,17 @@ private extension ContentView {
         let scheduler = notificationScheduler
         let startHour = notifStartHour
         let endHour = notifEndHour
+        if muteNotifications {
+            scheduler.cancelAll()
+            return
+        }
+        let interval = notifIntervalMinutes
         let sound = notifSoundFile
         DispatchQueue.global(qos: .userInitiated).async {
             scheduler.scheduleForTomorrow(
                 startHour: startHour,
                 endHour: endHour,
+                intervalMinutes: interval,
                 soundFile: sound
             )
         }
@@ -281,12 +352,18 @@ private extension ContentView {
         let scheduler = notificationScheduler
         let startHour = notifStartHour
         let endHour = notifEndHour
+        if muteNotifications {
+            scheduler.cancelAll()
+            return
+        }
+        let interval = notifIntervalMinutes
         let sound = notifSoundFile
         DispatchQueue.global(qos: .userInitiated).async {
             // Remove any pending notifications and schedule tomorrow only
             scheduler.scheduleForTomorrow(
                 startHour: startHour,
                 endHour: endHour,
+                intervalMinutes: interval,
                 soundFile: sound
             )
         }
@@ -296,8 +373,10 @@ private extension ContentView {
 private struct NotificationSettingsView: View {
     @Binding var startHour: Int
     @Binding var endHour: Int
+    @Binding var intervalMinutes: Int
     @Binding var selectedSound: String
     @Binding var muteTapSound: Bool
+    @Binding var muteNotifications: Bool
     var onApply: () -> Void
     var onResetToday: () -> Void
 
@@ -322,6 +401,14 @@ private struct NotificationSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Section(header: Text("Reminder Frequency")) {
+                    Picker("Every", selection: $intervalMinutes) {
+                        ForEach(reminderChoices, id: \.self) { value in
+                            Text(intervalLabel(value)).tag(value)
+                        }
+                    }
+                }
+
                 Section(header: Text("Notification Sound")) {
                     Picker("", selection: $selectedSound) {
                         ForEach(availableSoundsBaseNames(), id: \.self) { name in
@@ -329,6 +416,11 @@ private struct NotificationSettingsView: View {
                         }
                     }
                     Toggle("Mute Add Water Sound", isOn: $muteTapSound)
+                    Toggle("Mute Notifications", isOn: $muteNotifications)
+                    Text("App Version \(versionLabel)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .listRowBackground(Color.clear)
                 }
 
                 Section {
@@ -338,6 +430,7 @@ private struct NotificationSettingsView: View {
                         Text("Reset today's intake")
                     }
                 }
+
             }
             .navigationTitle("Notifications")
             .toolbar {
@@ -360,6 +453,31 @@ private struct NotificationSettingsView: View {
         return "\(h) \(isPM ? "PM" : "AM")"
     }
 
+    private let oncePerDaySentinel = 0
+
+    private var reminderChoices: [Int] {
+        var base = [oncePerDaySentinel, 15, 30, 45, 60, 90, 120]
+        if !base.contains(intervalMinutes) {
+            base.append(intervalMinutes)
+        }
+        return base.sorted()
+    }
+
+    private func intervalLabel(_ minutes: Int) -> String {
+        if minutes == oncePerDaySentinel {
+            return "Once a day"
+        }
+        if minutes < 60 {
+            return "Every \(minutes) minutes"
+        }
+        if minutes % 60 == 0 {
+            let hours = minutes / 60
+            let suffix = hours == 1 ? "hour" : "hours"
+            return "Every \(hours) \(suffix)"
+        }
+        return "Every \(minutes) minutes"
+    }
+
     private func availableSoundsBaseNames() -> [String] {
         var set = Set<String>()
         let fm = FileManager.default
@@ -378,6 +496,22 @@ private struct NotificationSettingsView: View {
         }
         if set.isEmpty { set.insert("drink more water") }
         return Array(set).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private var versionLabel: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String
+        let build = info?["CFBundleVersion"] as? String
+        switch (short, build) {
+        case let (v?, b?):
+            return "\(v) (\(b))"
+        case let (v?, nil):
+            return v
+        case let (nil, b?):
+            return b
+        default:
+            return "Unknown"
+        }
     }
 }
 
