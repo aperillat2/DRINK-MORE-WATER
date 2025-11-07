@@ -20,6 +20,12 @@ extension EnvironmentValues {
 }
 
 struct ContentView: View {
+    // Walkthrough state
+    @AppStorage("hasCompletedWalkthrough") private var hasCompletedWalkthrough: Bool = false
+    @AppStorage("hasLaunchedBefore") private var hasLaunchedBefore: Bool = false
+    @State private var showWalkthroughPrompt: Bool = false
+    @State private var walkthroughStep: Int? = nil // nil = not showing, 1..3 = steps
+
     private let haptics = HapticsFactory.default()
     private let calculator = FillFractionCalculator()
     @StateObject private var viewModel = WaterIntakeViewModel()
@@ -108,9 +114,16 @@ struct ContentView: View {
                                     .fontWeight(.semibold)
                                     .underline()
                             }
+                            .allowsHitTesting(walkthroughStep == nil || walkthroughStep == 3)
                             .buttonStyle(.plain)
                             .foregroundStyle(.white)
                             .accessibilityIdentifier("perTapAmountButton")
+                            .overlay(alignment: .center) {
+                                if walkthroughStep == 3 {
+                                    handPointerOverlay(size: CGSize(width: 60, height: 60))
+                                        .offset(x: -12, y: 8)
+                                }
+                            }
                             .popover(isPresented: $showOzPerTapPicker) {
                                 VStack(spacing: 16) {
                                     Text("Water Added Per Tap")
@@ -151,12 +164,33 @@ struct ContentView: View {
                             in: 40...200,
                             step: 10
                         )
+                        .allowsHitTesting(walkthroughStep == nil || walkthroughStep == 2)
                         .tint(.white)
+                        .padding(.leading, 80)
+                        .overlay(alignment: .center) {
+                            if walkthroughStep == 2 {
+                                handPointerOverlay(size: CGSize(width: 66, height: 66))
+                                    .offset(x: -40, y: 6)
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal, 92)
                 .padding(.bottom, 0)
             }
+        }
+        .overlay(alignment: .center) {
+            walkthroughOverlay
+        }
+        .alert("Welcome", isPresented: $showWalkthroughPrompt) {
+            Button("No, thanks", role: .cancel) {
+                hasCompletedWalkthrough = true
+            }
+            Button("Yes, show me") {
+                walkthroughStep = 1
+            }
+        } message: {
+            Text("Would you like a quick walkthrough of the app?")
         }
         .overlay(alignment: .topTrailing) {
             Button { showNotificationSettings = true } label: {
@@ -165,6 +199,7 @@ struct ContentView: View {
                     .foregroundStyle(.white)
                     .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 1)
             }
+            .allowsHitTesting(walkthroughStep == nil)
             .padding(.trailing, 100)
             .padding(.top, 20)
         }
@@ -192,10 +227,25 @@ struct ContentView: View {
                 },
                 onResetToday: {
                     showResetConfirmation = true
+                },
+                onShowHelp: {
+                    walkthroughStep = 1
+                    hasCompletedWalkthrough = false
                 }
             )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .onAppear {
+            if !hasLaunchedBefore {
+                hasLaunchedBefore = true
+                if !hasCompletedWalkthrough {
+                    DispatchQueue.main.async {
+                        showWalkthroughPrompt = true
+                    }
+                }
+            }
+
             viewModel.resetIfNeeded()
             if scenePhase != .active {
                 let t = Date.timeIntervalSinceReferenceDate
@@ -274,6 +324,105 @@ struct ContentView: View {
 
 // MARK: - Private helpers
 private extension ContentView {
+    // Animated hand pointer overlay shown during the walkthrough
+    @ViewBuilder
+    func handPointerOverlay(size: CGSize = CGSize(width: 80, height: 80)) -> some View {
+        HandPointerOverlayView(size: size)
+    }
+
+    @ViewBuilder
+    var walkthroughOverlay: some View {
+        if let step = walkthroughStep {
+            ZStack {
+                Color.black.opacity(0.5)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+
+                if step == 1 {
+                    VStack(spacing: 16) {
+                        Text("Tap the glass to add water.")
+                            .font(.title2).bold()
+                            .foregroundStyle(.white)
+                        Text("When the glass is full, you've met your daily goal.")
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.white.opacity(0.9))
+                            .padding(.horizontal)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: 320)
+
+                        HStack(spacing: 16) {
+                            Button("Skip") {
+                                walkthroughStep = nil
+                                hasCompletedWalkthrough = true
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.white)
+
+                            Button("Next") {
+                                walkthroughStep = 2
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 170)
+                    .padding(.horizontal)
+                } else {
+                    VStack(spacing: 16) {
+                        switch step {
+                        case 2:
+                            Text("Adjust your daily goal.")
+                                .font(.title2).bold()
+                                .foregroundStyle(.white)
+                            Text("Use the Daily goal slider to choose how much you want to drink today.")
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(.white.opacity(0.9))
+                                .padding(.horizontal)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: 320)
+                        case 3:
+                            Text("Set ounces per tap.")
+                                .font(.title2).bold()
+                                .foregroundStyle(.white)
+                            Text("Change how much water gets added each time by adjusting the oz value.")
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(.white.opacity(0.9))
+                                .padding(.horizontal)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: 320)
+                        default:
+                            EmptyView()
+                        }
+
+                        HStack(spacing: 16) {
+                            Button("Skip") {
+                                walkthroughStep = nil
+                                hasCompletedWalkthrough = true
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.white)
+
+                            Button(step == 3 ? "Done" : "Next") {
+                                if step >= 3 {
+                                    walkthroughStep = nil
+                                    hasCompletedWalkthrough = true
+                                } else {
+                                    walkthroughStep = step + 1
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 170)
+                    .padding(.horizontal)
+                }
+            }
+            .accessibilityAddTraits(.isModal)
+            .transition(.opacity)
+        }
+    }
+
     var shouldUseButtonForTap: Bool {
         ProcessInfo.processInfo.arguments.contains(uiTestButtonFlag)
     }
@@ -291,6 +440,13 @@ private extension ContentView {
     var interactiveGlass: some View {
         if shouldUseButtonForTap {
             Button(action: handleTap) { glassRenderer }
+                .allowsHitTesting(walkthroughStep == nil || walkthroughStep == 1)
+                .overlay(alignment: .center) {
+                    if walkthroughStep == 1 {
+                        handPointerOverlay()
+                            .offset(x: -32)
+                    }
+                }
                 .buttonStyle(NoHighlightButtonStyle())
                 .accessibilityLabel("Water glass")
                 .accessibilityAddTraits(.isButton)
@@ -299,10 +455,17 @@ private extension ContentView {
             glassRenderer
                 .contentShape(Rectangle())
                 .onTapGesture(perform: handleTap)
+                .allowsHitTesting(walkthroughStep == nil || walkthroughStep == 1)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Water glass")
                 .accessibilityAddTraits(.isButton)
                 .accessibilityIdentifier("waterGlass")
+                .overlay(alignment: .center) {
+                    if walkthroughStep == 1 {
+                        handPointerOverlay()
+                            .offset(x: -32)
+                    }
+                }
         }
     }
 
@@ -370,6 +533,92 @@ private extension ContentView {
     }
 }
 
+// MARK: - Walkthrough Hand Overlay
+private struct HandPointerOverlayView: View {
+    let size: CGSize
+    private let gesturePeriod: TimeInterval = 1.2
+    private let updateInterval: TimeInterval = 1.0 / 30.0
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: updateInterval)) { context in
+            let state = animationState(for: context.date)
+            ZStack(alignment: .topLeading) {
+                rippleView(state.ripple1)
+                    .offset(x: state.tipOffset.width, y: state.tipOffset.height)
+                rippleView(state.ripple2)
+                    .offset(x: state.tipOffset.width, y: state.tipOffset.height)
+                handImage(state.hand)
+            }
+        }
+    }
+
+    private func animationState(for date: Date) -> AnimationState {
+        let elapsed = date.timeIntervalSinceReferenceDate
+        let normalized = (elapsed.truncatingRemainder(dividingBy: gesturePeriod)) / gesturePeriod
+        let secondary = (normalized + 0.5).truncatingRemainder(dividingBy: 1.0)
+        let press = sin(normalized * .pi)
+        let tipOffset = CGSize(width: size.width * 0.55, height: size.height * 0.18)
+
+        let ripple1 = RippleState(
+            size: 24 + 22 * normalized,
+            opacity: 0.5 * (1 - normalized),
+            lineWidth: 3
+        )
+        let ripple2 = RippleState(
+            size: 18 + 28 * secondary,
+            opacity: 0.35 * (1 - secondary),
+            lineWidth: 2
+        )
+        let hand = HandState(
+            scale: 2.0 - 0.07 * press,
+            offset: CGSize(width: 6 * press, height: 10 * press)
+        )
+
+        return AnimationState(
+            tipOffset: tipOffset,
+            ripple1: ripple1,
+            ripple2: ripple2,
+            hand: hand
+        )
+    }
+
+    private func rippleView(_ ripple: RippleState) -> some View {
+        Circle()
+            .stroke(Color.white.opacity(ripple.opacity), lineWidth: ripple.lineWidth)
+            .frame(width: ripple.size, height: ripple.size)
+    }
+
+    private func handImage(_ hand: HandState) -> some View {
+        Image("hand")
+            .resizable()
+            .renderingMode(.original)
+            .scaledToFit()
+            .frame(width: size.width, height: size.height)
+            .shadow(color: Color.black.opacity(0.3), radius: 6, x: 0, y: 3)
+            .scaleEffect(hand.scale, anchor: UnitPoint.topLeading)
+            .offset(x: hand.offset.width, y: hand.offset.height)
+            .opacity(0.75)
+    }
+
+    private struct AnimationState {
+        let tipOffset: CGSize
+        let ripple1: RippleState
+        let ripple2: RippleState
+        let hand: HandState
+    }
+
+    private struct RippleState {
+        let size: CGFloat
+        let opacity: Double
+        let lineWidth: CGFloat
+    }
+
+    private struct HandState {
+        let scale: CGFloat
+        let offset: CGSize
+    }
+}
+
 private struct NotificationSettingsView: View {
     @Binding var startHour: Int
     @Binding var endHour: Int
@@ -379,6 +628,7 @@ private struct NotificationSettingsView: View {
     @Binding var muteNotifications: Bool
     var onApply: () -> Void
     var onResetToday: () -> Void
+    var onShowHelp: () -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -417,10 +667,23 @@ private struct NotificationSettingsView: View {
                     }
                     Toggle("Mute Add Water Sound", isOn: $muteTapSound)
                     Toggle("Mute Notifications", isOn: $muteNotifications)
-                    Text("App Version \(versionLabel)")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .listRowBackground(Color.clear)
+                    HStack {
+                        Text("App Version \(versionLabel)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            dismiss()
+                            DispatchQueue.main.async {
+                                onShowHelp()
+                            }
+                        } label: {
+                            Label("Help", systemImage: "questionmark.circle")
+                                .labelStyle(.titleAndIcon)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .listRowBackground(Color.clear)
                 }
 
                 Section {
@@ -445,6 +708,7 @@ private struct NotificationSettingsView: View {
                 }
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 
     private func hourLabel(_ hour24: Int) -> String {
