@@ -183,8 +183,12 @@ final class NotificationScheduler: NotificationScheduling {
             }
         }()
 
-        let resolvedName = resolveSoundFilename(baseName: soundFile)
         let sound: UNNotificationSound? = {
+            // Empty selection means no sound
+            if soundFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return nil
+            }
+            let resolvedName = resolveSoundFilename(baseName: soundFile)
             if let name = resolvedName {
                 return UNNotificationSound(named: UNNotificationSoundName(name))
             }
@@ -261,8 +265,11 @@ final class NotificationScheduler: NotificationScheduling {
 
         let tomorrowTimes = times(for: tomorrow)
 
-        let resolvedName = resolveSoundFilename(baseName: soundFile)
         let sound: UNNotificationSound? = {
+            if soundFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return nil
+            }
+            let resolvedName = resolveSoundFilename(baseName: soundFile)
             if let name = resolvedName {
                 return UNNotificationSound(named: UNNotificationSoundName(name))
             }

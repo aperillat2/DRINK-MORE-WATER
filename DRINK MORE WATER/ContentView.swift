@@ -38,7 +38,7 @@ struct ContentView: View {
 
     // Notification settings (persisted)
     @AppStorage("notifStartHour") private var notifStartHour: Int = 7    // 7 AM
-    @AppStorage("notifEndHour") private var notifEndHour: Int = 22       // 10 PM
+    @AppStorage("notifEndHour") private var notifEndHour: Int = 20       // 8 PM
     @AppStorage("notifSoundFile") private var notifSoundFile: String = "drink more water"
     @AppStorage("notifIntervalMinutes") private var notifIntervalMinutes: Int = 60
     @AppStorage("muteNotifications") private var muteNotifications: Bool = false
@@ -95,18 +95,28 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             Color(.systemBlue).ignoresSafeArea()
+            
+            VStack(spacing: 8) {
+                Text("\(viewModel.intakeOz) / \(viewModel.dailyGoalOz) oz")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .accessibilityIdentifier("intakeLabel")
+            }
+            .padding(.top, -320)
+            
             interactiveGlass
+            
             VStack {
                 Spacer()
-                VStack(spacing: 20) {
-                    VStack(spacing: 10) {
-                        Text("\(viewModel.intakeOz) / \(viewModel.dailyGoalOz) oz")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .accessibilityIdentifier("intakeLabel")
-                        HStack(spacing: 4) {
+                VStack(spacing: 25) {
+                    VStack(spacing: 8) {
+                        HStack(spacing: 10) {
                             Text("Tap the glass to add")
+                                .font(.title3)
                                 .foregroundStyle(.white.opacity(0.7))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                                .allowsTightening(true)
                             Button {
                                 showOzPerTapPicker = true
                             } label: {
@@ -127,9 +137,9 @@ struct ContentView: View {
                             .popover(isPresented: $showOzPerTapPicker) {
                                 VStack(spacing: 16) {
                                     Text("Water Added Per Tap")
-                                        .font(.headline)
+                                        .font(.title2)
                                     Text("\(viewModel.ozPerTap) oz")
-                                        .font(.largeTitle.weight(.bold))
+                                        .font(.title.weight(.bold))
                                     Slider(
                                         value: Binding(
                                             get: { Double(viewModel.ozPerTap) },
@@ -140,38 +150,39 @@ struct ContentView: View {
                                     )
                                     .tint(.blue)
                                     Text("Choose between 5 and 20 oz.")
-                                        .font(.footnote)
+                                        .font(.title3)
                                         .foregroundStyle(.secondary)
                                     Button("Done") { showOzPerTapPicker = false }
                                         .buttonStyle(.borderedProminent)
                                 }
                                 .padding()
+                                .dynamicTypeSize(.large ... .accessibility1)
                             }
                         }
-                        .font(.subheadline)
+                        .padding(.top, 8)
+                        .offset(y: 10)
+                        .font(.title3)
                     }
-                    VStack(spacing: 20) {
-                        HStack {
-                            Text("Daily goal").font(.headline).foregroundStyle(.white)
-                            Spacer()
-                            Text("\(viewModel.dailyGoalOz) oz").font(.headline).foregroundStyle(.white.opacity(0.75))
-                        }
-                        Slider(
-                            value: Binding(
-                                get: { Double(viewModel.dailyGoalOz) },
-                                set: { viewModel.dailyGoalOz = Int($0.rounded()) }
-                            ),
-                            in: 40...200,
-                            step: 10
-                        )
-                        .allowsHitTesting(walkthroughStep == nil || walkthroughStep == 2)
-                        .tint(.white)
-                        .padding(.leading, 80)
-                        .overlay(alignment: .center) {
-                            if walkthroughStep == 2 {
-                                handPointerOverlay(size: CGSize(width: 66, height: 66))
-                                    .offset(x: -40, y: 6)
-                            }
+
+                    HStack {
+                        Text("Daily goal").font(.title3).foregroundStyle(.white)
+                        Spacer()
+                        Text("\(viewModel.dailyGoalOz) oz").font(.title3).foregroundStyle(.white.opacity(0.75))
+                    }
+                    Slider(
+                        value: Binding(
+                            get: { Double(viewModel.dailyGoalOz) },
+                            set: { viewModel.dailyGoalOz = Int($0.rounded()) }
+                        ),
+                        in: 40...200,
+                        step: 10
+                    )
+                    .allowsHitTesting(walkthroughStep == nil || walkthroughStep == 2)
+                    .tint(.white)
+                    .overlay(alignment: .center) {
+                        if walkthroughStep == 2 {
+                            handPointerOverlay(size: CGSize(width: 66, height: 66))
+                                .offset(x: -40, y: 6)
                         }
                     }
                 }
@@ -179,6 +190,7 @@ struct ContentView: View {
                 .padding(.bottom, 0)
             }
         }
+        .dynamicTypeSize(.large ... .accessibility1)
         .overlay(alignment: .center) {
             walkthroughOverlay
         }
@@ -332,94 +344,62 @@ private extension ContentView {
 
     @ViewBuilder
     var walkthroughOverlay: some View {
-        if let step = walkthroughStep {
-            ZStack {
-                Color.black.opacity(0.5)
-                    .ignoresSafeArea()
-                    .transition(.opacity)
+        if let step = walkthroughStep,
+           let info = walkthroughInfo(for: step) {
+            GeometryReader { proxy in
+                let textWidth = walkthroughTextWidth(for: proxy.size.width)
 
-                if step == 1 {
-                    VStack(spacing: 16) {
-                        Text("Tap the glass to add water.")
-                            .font(.title2).bold()
-                            .foregroundStyle(.white)
-                        Text("When the glass is full, you've met your daily goal.")
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.white.opacity(0.9))
-                            .padding(.horizontal)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: 320)
+                ZStack {
+                    Color.black.opacity(0.5)
+                        .ignoresSafeArea()
+                        .transition(.opacity)
 
-                        HStack(spacing: 16) {
-                            Button("Skip") {
-                                walkthroughStep = nil
-                                hasCompletedWalkthrough = true
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(.white)
-
-                            Button("Next") {
-                                walkthroughStep = 2
-                            }
-                            .buttonStyle(.borderedProminent)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .padding(.top, 170)
-                    .padding(.horizontal)
-                } else {
-                    VStack(spacing: 16) {
-                        switch step {
-                        case 2:
-                            Text("Adjust your daily goal.")
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            Text(info.title)
                                 .font(.title2).bold()
                                 .foregroundStyle(.white)
-                            Text("Use the Daily goal slider to choose how much you want to drink today.")
+                                .multilineTextAlignment(.center)
+                                .lineLimit(nil)
+                                .frame(width: textWidth, alignment: .center)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Text(info.detail)
                                 .multilineTextAlignment(.center)
                                 .foregroundStyle(.white.opacity(0.9))
-                                .padding(.horizontal)
+                                .lineLimit(nil)
+                                .frame(width: textWidth, alignment: .center)
                                 .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: 320)
-                        case 3:
-                            Text("Set ounces per tap.")
-                                .font(.title2).bold()
-                                .foregroundStyle(.white)
-                            Text("Change how much water gets added each time by adjusting the oz value.")
-                                .multilineTextAlignment(.center)
-                                .foregroundStyle(.white.opacity(0.9))
-                                .padding(.horizontal)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: 320)
-                        default:
-                            EmptyView()
-                        }
 
-                        HStack(spacing: 16) {
-                            Button("Skip") {
-                                walkthroughStep = nil
-                                hasCompletedWalkthrough = true
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(.white)
-
-                            Button(step == 3 ? "Done" : "Next") {
-                                if step >= 3 {
+                            HStack(spacing: 16) {
+                                Button("Skip") {
                                     walkthroughStep = nil
                                     hasCompletedWalkthrough = true
-                                } else {
-                                    walkthroughStep = step + 1
                                 }
+                                .buttonStyle(.bordered)
+                                .tint(.white)
+
+                                Button(info.isFinal ? "Done" : "Next") {
+                                    if info.isFinal {
+                                        walkthroughStep = nil
+                                        hasCompletedWalkthrough = true
+                                    } else {
+                                        walkthroughStep = step + 1
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
                             }
-                            .buttonStyle(.borderedProminent)
                         }
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal)
+                        .padding(.top, 170)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .padding(.top, 170)
-                    .padding(.horizontal)
                 }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .accessibilityAddTraits(.isModal)
+                .transition(.opacity)
             }
-            .accessibilityAddTraits(.isModal)
-            .transition(.opacity)
         }
     }
 
@@ -471,6 +451,39 @@ private extension ContentView {
 
     var maskBounds: WaterMaskBounds {
         WaterMaskBounds(emptyFraction: calibratedEmptyFraction, fullFraction: calibratedFullFraction)
+    }
+
+    func walkthroughInfo(for step: Int) -> (title: String, detail: String, isFinal: Bool)? {
+        switch step {
+        case 1:
+            return (
+                "Tap the glass to add water.",
+                "When the glass is full, you've met your daily goal.",
+                false
+            )
+        case 2:
+            return (
+                "Adjust your daily goal.",
+                "Use the Daily goal slider to choose how much you want to drink today.",
+                false
+            )
+        case 3:
+            return (
+                "Set ounces per tap.",
+                "Change how much water gets added each time by adjusting the oz value.",
+                true
+            )
+        default:
+            return nil
+        }
+    }
+
+    func walkthroughTextWidth(for totalWidth: CGFloat) -> CGFloat {
+        let padding: CGFloat = 48
+        let minWidth: CGFloat = 220
+        let maxWidth: CGFloat = 360
+        let available = totalWidth - padding
+        return min(max(available, minWidth), maxWidth)
     }
     func rescheduleNotifications(lastDrinkDate: Date?) {
         let scheduler = notificationScheduler
@@ -661,6 +674,8 @@ private struct NotificationSettingsView: View {
 
                 Section(header: Text("Notification Sound")) {
                     Picker("", selection: $selectedSound) {
+                        // Explicit none option (empty string means no sound)
+                        Text("None").tag("")
                         ForEach(availableSoundsBaseNames(), id: \.self) { name in
                             Text(name).tag(name)
                         }
@@ -695,7 +710,6 @@ private struct NotificationSettingsView: View {
                 }
 
             }
-            .navigationTitle("Notifications")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -709,6 +723,7 @@ private struct NotificationSettingsView: View {
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
+        .dynamicTypeSize(.large ... .accessibility1)
     }
 
     private func hourLabel(_ hour24: Int) -> String {

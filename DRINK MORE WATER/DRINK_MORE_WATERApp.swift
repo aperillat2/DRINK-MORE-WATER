@@ -26,13 +26,13 @@ struct DRINK_MORE_WATERApp: App {
                     ContentView()
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: showSplash)
+            .animation(.easeInOut(duration: 0.1), value: showSplash)
             .onAppear {
                 if shouldSkipSplash { showSplash = false }
             }
             .task {
                 guard showSplash && !shouldSkipSplash else { return }
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
                 withAnimation {
                     showSplash = false
                 }

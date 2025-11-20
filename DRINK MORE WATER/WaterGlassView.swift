@@ -324,6 +324,24 @@ private extension WaterGlassView {
                     .opacity(showGoalBadge ? 0 : 1)
                     .accessibilityHidden(true)
 
+                if showGoalBadge {
+                    Image("daily_goal_met")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: glassSize.width, height: glassSize.height)
+                        .scaleEffect(WaterGlassMetrics.textScale)
+                        .offset(y: WaterGlassMetrics.glassVerticalNudge)
+                        .offset(x: WaterGlassMetrics.textOffset.width, y: WaterGlassMetrics.textOffset.height)
+                        .mask(
+                            Rectangle()
+                                .frame(width: glassSize.width, height: aboveAligned)
+                                .offset(y: WaterGlassMetrics.glassVerticalNudge + WaterGlassMetrics.textOffset.height - glassSize.height/2 + aboveAligned/2)
+                        )
+                        .transaction { $0.animation = nil }
+                        .animation(nil, value: aboveAligned)
+                        .accessibilityHidden(true)
+                }
+
                 if !shouldHideUnderwater {
                     RefractedTextView(
                         imageName: "glass_text",
@@ -344,16 +362,22 @@ private extension WaterGlassView {
                     .accessibilityHidden(true)
                 }
 
-                Image("daily_goal_met")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: glassSize.width, height: glassSize.height)
-                    .scaleEffect(WaterGlassMetrics.textScale)
-                    .offset(y: WaterGlassMetrics.glassVerticalNudge)
-                    .offset(x: WaterGlassMetrics.textOffset.width, y: WaterGlassMetrics.textOffset.height)
-                    .opacity(showGoalBadge ? 1 : 0)
-                    .animation(.easeInOut(duration: 0.35), value: showGoalBadge)
+                if showGoalBadge {
+                    RefractedTextView(
+                        imageName: "daily_goal_met",
+                        glassSize: glassSize,
+                        textScale: WaterGlassMetrics.textScale,
+                        textOffset: WaterGlassMetrics.textOffset,
+                        verticalNudge: WaterGlassMetrics.glassVerticalNudge,
+                        waterline: underwaterStartY,
+                        ripplePhase: ripplePhase,
+                        rippleAmplitude: 4
+                    )
+                    .mask(glassMask())
+                    .transaction { $0.animation = nil }
+                    .animation(nil, value: fraction)
                     .accessibilityHidden(true)
+                }
             }
         )
     }
@@ -1083,3 +1107,4 @@ private final class ImageContentAnalyzer {
         return rect
     }
 }
+
