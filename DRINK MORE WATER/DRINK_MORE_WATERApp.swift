@@ -2,12 +2,19 @@ import SwiftUI
 
 @main
 struct DRINK_MORE_WATERApp: App {
-    private let uiTestsSkipFlag = "-UITestsSkipSplash"
-    private var shouldSkipSplash: Bool { ProcessInfo.processInfo.arguments.contains(uiTestsSkipFlag) }
+    // UI-test launch flags only exist in Debug builds, so they can never affect the App Store build.
+    private var shouldSkipSplash: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-UITestsSkipSplash")
+        #else
+        false
+        #endif
+    }
 
     @State private var showSplash = true
 
     init() {
+        #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-UITestsResetState") {
             // Wipe every saved value (intake, goal, per-tap, unit, settings...) so UI tests
             // always start from factory defaults, whatever was changed in the simulator.
@@ -19,6 +26,7 @@ struct DRINK_MORE_WATERApp: App {
             defaults.set(true, forKey: "hasLaunchedBefore")
             defaults.set(true, forKey: "hasCompletedWalkthrough")
         }
+        #endif
     }
 
     var body: some Scene {
