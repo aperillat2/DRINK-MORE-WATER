@@ -96,19 +96,20 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             Color(.systemBlue).ignoresSafeArea()
-            
-            VStack(spacing: 8) {
+
+            // Top-to-bottom: intake label, glass (fills the remaining space), controls.
+            VStack(spacing: 0) {
                 Text("\(viewModel.intakeOz) / \(viewModel.dailyGoalOz) \(viewModel.unit.label)")
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(.white)
                     .accessibilityIdentifier("intakeLabel")
-            }
-            .padding(.top, -320)
-            
-            interactiveGlass
-            
-            VStack {
-                Spacer()
+                    .padding(.top, 56) // leaves room for the gear button above
+
+                GeometryReader { proxy in
+                    interactiveGlass(scale: GlassLayout.scale(toFit: proxy.size))
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                }
+
                 VStack(spacing: 25) {
                     VStack(spacing: 8) {
                         HStack(spacing: 10) {
@@ -187,8 +188,9 @@ struct ContentView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 92)
-                .padding(.bottom, 0)
+                .frame(maxWidth: 500) // keep controls a comfortable width on iPad
+                .padding(.horizontal, 24)
+                .padding(.bottom, 8)
             }
         }
         .dynamicTypeSize(.large ... .accessibility1)
@@ -213,8 +215,8 @@ struct ContentView: View {
                     .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 1)
             }
             .allowsHitTesting(walkthroughStep == nil)
-            .padding(.trailing, 100)
-            .padding(.top, 20)
+            .padding(.trailing, 24)
+            .padding(.top, 12)
         }
         .alert("Reset today's intake?", isPresented: $showResetConfirmation) {
             Button("Cancel", role: .cancel) {}
@@ -419,10 +421,22 @@ private extension ContentView {
         )
     }
 
+    /// The glass drawn at `scale`, laid out in a frame that hugs the visible glass.
+    /// `WaterGlassView` always draws in its fixed 551×722 design space (mostly transparent
+    /// margins), so it's scaled as a whole and allowed to overflow the frame invisibly.
+    func scaledGlass(_ scale: CGFloat) -> some View {
+        glassRenderer
+            .scaleEffect(scale)
+            .frame(
+                width: GlassLayout.visibleSize.width * scale,
+                height: GlassLayout.visibleSize.height * scale
+            )
+    }
+
     @ViewBuilder
-    var interactiveGlass: some View {
+    func interactiveGlass(scale: CGFloat) -> some View {
         if shouldUseButtonForTap {
-            Button(action: handleTap) { glassRenderer }
+            Button(action: handleTap) { scaledGlass(scale).contentShape(Rectangle()) }
                 .allowsHitTesting(walkthroughStep == nil || walkthroughStep == 1)
                 .overlay(alignment: .center) {
                     if walkthroughStep == 1 {
@@ -435,7 +449,7 @@ private extension ContentView {
                 .accessibilityAddTraits(.isButton)
                 .accessibilityIdentifier("waterGlass")
         } else {
-            glassRenderer
+            scaledGlass(scale)
                 .contentShape(Rectangle())
                 .onTapGesture(perform: handleTap)
                 .allowsHitTesting(walkthroughStep == nil || walkthroughStep == 1)
@@ -546,6 +560,24 @@ private extension ContentView {
                 soundFile: sound
             )
         }
+    }
+}
+
+// MARK: - Glass Layout
+/// Sizing for the glass on the main screen.
+enum GlassLayout {
+    /// Size of the visible glass inside `WaterGlassView`'s 551×722 design canvas
+    /// (measured from the artwork, plus a small margin). The glass is centered in that canvas.
+    static let visibleSize = CGSize(width: 300, height: 550)
+
+    /// Upper limit so the glass doesn't get oversized (and blurry) on iPad.
+    static let maxScale: CGFloat = 1.6
+
+    /// Scale at which the visible glass fits inside `available`.
+    static func scale(toFit available: CGSize) -> CGFloat {
+        guard available.width > 0, available.height > 0 else { return 1 }
+        let fit = min(available.width / visibleSize.width, available.height / visibleSize.height)
+        return min(fit, maxScale)
     }
 }
 

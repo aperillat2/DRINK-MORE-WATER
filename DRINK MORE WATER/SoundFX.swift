@@ -2,9 +2,14 @@ import Foundation
 import AVFoundation
 
 /// Lightweight shared audio helper for the splash effect.
-final class SoundFX: NSObject {
+///
+/// Activating/deactivating `AVAudioSession` can block, so all audio work runs on a private
+/// serial queue instead of the main thread (where it could stall taps and animation).
+/// Every mutable property below is only touched on `audioQueue`.
+nonisolated final class SoundFX: NSObject, @unchecked Sendable {
     static let shared = SoundFX()
 
+    private let audioQueue = DispatchQueue(label: "SoundFX.audio", qos: .userInitiated)
     private var splashPlayer: AVAudioPlayer?
     private let splashVolume: Float = 0.08
     private let session = AVAudioSession.sharedInstance()
@@ -13,10 +18,28 @@ final class SoundFX: NSObject {
 
     private override init() {
         super.init()
-        // Set the category before preparing the player so it never runs under the
-        // default (soloAmbient) category, which pauses other apps' audio.
-        configureCategory()
-        preloadSplash()
+        audioQueue.async { [self] in
+            // Set the category before preparing the player so it never runs under the
+            // default (soloAmbient) category, which pauses other apps' audio.
+            configureCategory()
+            preloadSplash()
+        }
+    }
+
+    /// Safe to call from the main thread; returns immediately.
+    func playSplash() {
+        audioQueue.async { [self] in
+            if splashPlayer == nil { preloadSplash() }
+            activateSessionIfNeeded()
+            guard let player = splashPlayer else { return }
+
+            player.stop()
+            player.currentTime = 0
+            player.volume = splashVolume
+            player.play()
+
+            scheduleSessionDeactivation()
+        }
     }
 
     /// `.ambient` mixes with other audio (Music, podcasts, audiobooks) by default.
@@ -28,19 +51,6 @@ final class SoundFX: NSObject {
         } catch {
             print("Failed to set audio session category: \(error)")
         }
-    }
-
-    func playSplash() {
-        if splashPlayer == nil { preloadSplash() }
-        activateSessionIfNeeded()
-        guard let player = splashPlayer else { return }
-
-        player.stop()
-        player.currentTime = 0
-        player.volume = splashVolume
-        player.play()
-
-        scheduleSessionDeactivation()
     }
 
     private func preloadSplash() {
@@ -80,12 +90,15 @@ final class SoundFX: NSObject {
             self.sessionActivated = false
         }
         deactivateWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: workItem)
+        audioQueue.asyncAfter(deadline: .now() + 2.0, execute: workItem)
     }
 }
 
 extension SoundFX: AVAudioPlayerDelegate {
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        scheduleSessionDeactivation()
+        // The delegate can be called on any thread; hop back to the audio queue.
+        audioQueue.async { [self] in
+            scheduleSessionDeactivation()
+        }
     }
 }
