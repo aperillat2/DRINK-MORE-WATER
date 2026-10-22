@@ -32,6 +32,14 @@ struct WaterGlassView: View {
     static let glareSpeed: Double = 0.01
     static let rippleSeed = Double.random(in: 0...(2 * .pi))
 
+    /// Height/width of the surface mask artwork. Looked up once instead of on every frame.
+    static let cachedSurfaceMaskAspect: CGFloat = {
+        if let cg = UIImage(named: "glass_surface_mask")?.cgImage {
+            return CGFloat(cg.height) / CGFloat(cg.width)
+        }
+        return 88.0 / 480.0
+    }()
+
     var body: some View {
         glassVisual
             .onAppear(perform: configureOnAppear)
@@ -62,7 +70,9 @@ private extension WaterGlassView {
     }
 
     var glassVisual: AnyView {
-        let fps: Double = 30.0
+        // The waves are always moving, so this redraws continuously; halve the rate in
+        // Low Power Mode to save battery.
+        let fps: Double = ProcessInfo.processInfo.isLowPowerModeEnabled ? 15.0 : 30.0
         if shouldAnimate {
             return AnyView(
                 TimelineView(.periodic(from: .now, by: 1.0 / fps)) { context in
@@ -245,12 +255,7 @@ private extension WaterGlassView {
         )
     }
 
-    var surfaceMaskAspect: CGFloat {
-        if let cg = UIImage(named: "glass_surface_mask")?.cgImage {
-            return CGFloat(cg.height) / CGFloat(cg.width)
-        }
-        return 88.0 / 480.0
-    }
+    var surfaceMaskAspect: CGFloat { WaterGlassView.cachedSurfaceMaskAspect }
 
     func glassMaskForOverlays(biasY: CGFloat = 0) -> some View {
         let px = 1.0 / max(displayScale, 1)
@@ -825,14 +830,9 @@ private enum GlassOverlayFactory {
     }
 
     private static func render<Content: View>(content: Content) -> Image? {
-        if #available(iOS 16.0, *) {
-            let renderer = ImageRenderer(content: content)
-            renderer.scale = UIScreen.main.scale
-            if let uiImage = renderer.uiImage {
-                return Image(uiImage: uiImage)
-            }
-        }
-        return nil
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = UIScreen.main.scale
+        return renderer.uiImage.map { Image(uiImage: $0) }
     }
 }
 
@@ -884,7 +884,17 @@ private struct RefractedTextView: View {
         self.waterline = waterline
         self.ripplePhase = ripplePhase
         self.rippleAmplitude = rippleAmplitude
-        self.baseImage = UIImage(named: imageName)?.cgImage
+        self.baseImage = Self.cgImage(named: imageName)
+    }
+
+    /// This view is recreated on every animation frame, so decoded images are cached by name.
+    private static var imageCache: [String: CGImage] = [:]
+
+    private static func cgImage(named name: String) -> CGImage? {
+        if let cached = imageCache[name] { return cached }
+        let image = UIImage(named: name)?.cgImage
+        imageCache[name] = image
+        return image
     }
 
     var body: some View {

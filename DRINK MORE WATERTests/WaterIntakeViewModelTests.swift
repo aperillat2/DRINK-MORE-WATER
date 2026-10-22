@@ -20,6 +20,28 @@ private final class IsolatedDefaults {
     }
 }
 
+/// A clock the test can move forward, e.g. across midnight.
+private final class TestClock {
+    var now: Date
+    init(_ now: Date) { self.now = now }
+}
+
+/// UTC Gregorian calendar so dates in tests mean the same thing everywhere.
+private let utc: Calendar = {
+    var cal = Calendar(identifier: .gregorian)
+    cal.timeZone = TimeZone(secondsFromGMT: 0)!
+    return cal
+}()
+
+private func date(_ iso: String) -> Date {
+    ISO8601DateFormatter().date(from: iso)!
+}
+
+@MainActor
+private func makeViewModel(_ store: IsolatedDefaults, clock: TestClock) -> WaterIntakeViewModel {
+    WaterIntakeViewModel(defaults: store.defaults, now: { clock.now }, calendar: utc)
+}
+
 @MainActor
 @Suite("WaterIntakeViewModel Tests")
 struct WaterIntakeViewModelTests {
@@ -93,60 +115,89 @@ struct WaterIntakeViewModelTests {
         #expect(vm.nextIntakeStep() == nil)
     }
 
-    @Test("resetIfNeeded resets on new day")
-    func resetIfNeededResetsOnNewDay() {
+    @Test("resetIfNeeded resets when the clock passes midnight")
+    func resetIfNeededAcrossMidnight() {
+        let clock = TestClock(date("2000-01-01T23:50:00Z"))
         let store = IsolatedDefaults(intake: 30, date: "2000-01-01", goal: 80)
-
-        let vm = WaterIntakeViewModel(defaults: store.defaults)
-        vm.recordDrink(at: Date(timeIntervalSince1970: 946_728_000)) // 2000-01-01
+        let vm = makeViewModel(store, clock: clock)
+        vm.recordDrink()
+        vm.intakeOz = 80
         vm.markGoalMetToday()
+
+        // Still the same day: nothing changes.
+        vm.resetIfNeeded()
+        #expect(vm.intakeOz == 80)
+        #expect(vm.isGoalMetToday)
+        #expect(vm.lastDrinkToday != nil)
+
+        // Ten minutes later it's a new day.
+        clock.now = date("2000-01-02T00:00:00Z")
+        #expect(vm.isGoalMetToday == false, "Yesterday's goal doesn't count today")
+        #expect(vm.lastDrinkToday == nil, "Yesterday's drink doesn't time today's reminders")
         vm.resetIfNeeded()
 
         #expect(vm.intakeOz == 0)
-        #expect(vm.lastIntakeDateString == DateUtils.todayString())
+        #expect(vm.lastIntakeDateString == "2000-01-02")
+        #expect(vm.lastDrinkDate == nil)
+    }
+
+    @Test("resetToday empties the glass and clears today's drink")
+    func resetTodayClearsEverything() {
+        let clock = TestClock(date("2000-01-01T12:00:00Z"))
+        let store = IsolatedDefaults(intake: 80, date: "2000-01-01", goal: 80)
+        let vm = makeViewModel(store, clock: clock)
+        vm.recordDrink()
+        vm.markGoalMetToday()
+
+        vm.resetToday()
+
+        #expect(vm.intakeOz == 0)
         #expect(vm.isGoalMetToday == false)
         #expect(vm.lastDrinkDate == nil)
     }
 
-    @Test("resetIfNeeded no-op when already today")
-    func resetIfNeededNoOpForToday() {
-        let today = DateUtils.todayString()
-        let store = IsolatedDefaults(intake: 30, date: today, goal: 80)
-
-        let vm = WaterIntakeViewModel(defaults: store.defaults)
-        vm.resetIfNeeded()
-
-        #expect(vm.intakeOz == 30)
-        #expect(vm.lastIntakeDateString == today)
-    }
-
     @Test("recordDrink persists the last drink time across launches")
     func recordDrinkPersists() throws {
+        let drinkTime = date("2000-01-01T12:34:56Z")
+        let clock = TestClock(drinkTime)
         let store = IsolatedDefaults()
-        let drinkTime = Date().addingTimeInterval(-600).rounded()
 
-        let vm = WaterIntakeViewModel(defaults: store.defaults)
-        vm.recordDrink(at: drinkTime)
+        makeViewModel(store, clock: clock).recordDrink()
 
-        let reloaded = WaterIntakeViewModel(defaults: store.defaults)
+        let reloaded = makeViewModel(store, clock: clock)
         let restored = try #require(reloaded.lastDrinkDate)
         #expect(abs(restored.timeIntervalSince(drinkTime)) < 0.001)
+        #expect(reloaded.lastDrinkToday == restored)
     }
 
-    @Test("lastDrinkToday ignores drinks from previous days")
-    func lastDrinkTodayIgnoresOldDrinks() throws {
-        let store = IsolatedDefaults()
-        let vm = WaterIntakeViewModel(defaults: store.defaults)
+    @Test("Lowering the goal to or below today's intake meets it")
+    func loweringGoalMeetsIt() {
+        let clock = TestClock(date("2000-01-01T12:00:00Z"))
+        let store = IsolatedDefaults(intake: 60, date: "2000-01-01", goal: 80)
+        let vm = makeViewModel(store, clock: clock)
 
-        #expect(vm.lastDrinkToday == nil)
+        vm.dailyGoalOz = 50
+        #expect(vm.syncGoalMetState() == true)
+        #expect(vm.isGoalMetToday)
+        #expect(vm.intakeOz == 60, "Intake isn't lost when the goal is lowered")
+        #expect(vm.nextIntakeStep() == nil)
 
-        let yesterday = try #require(Calendar.current.date(byAdding: .day, value: -1, to: Date()))
-        vm.recordDrink(at: yesterday)
-        #expect(vm.lastDrinkToday == nil)
+        // Calling again without a change reports nothing new.
+        #expect(vm.syncGoalMetState() == false)
+    }
 
-        let now = Date()
-        vm.recordDrink(at: now)
-        #expect(vm.lastDrinkToday == now)
+    @Test("Raising the goal above today's intake un-meets it")
+    func raisingGoalUnmeetsIt() throws {
+        let clock = TestClock(date("2000-01-01T12:00:00Z"))
+        let store = IsolatedDefaults(intake: 80, date: "2000-01-01", goal: 80)
+        let vm = makeViewModel(store, clock: clock)
+        vm.markGoalMetToday()
+
+        vm.dailyGoalOz = 100
+        #expect(vm.syncGoalMetState() == true)
+        #expect(vm.isGoalMetToday == false)
+        let step = try #require(vm.nextIntakeStep(), "Tapping works again")
+        #expect(step.newValue == 90)
     }
 
     @Test("setUnit converts amounts between oz and ml")
@@ -173,15 +224,25 @@ struct WaterIntakeViewModelTests {
         vm.setUnit(.ml)
         #expect(WaterIntakeViewModel(defaults: store.defaults).unit == .ml)
     }
+
+    @Test("setUnit never turns an unfinished day into a met goal by rounding")
+    func setUnitDoesNotRoundIntoGoal() {
+        // 79 oz is 2336 ml, but the goal snaps to 2400 ml; intake must stay below it.
+        let store = IsolatedDefaults(intake: 79, date: DateUtils.todayString(), goal: 80)
+        let vm = WaterIntakeViewModel(defaults: store.defaults)
+
+        vm.setUnit(.ml)
+        #expect(vm.intakeOz < vm.dailyGoalOz)
+    }
 }
 
 @Suite("FillFractionCalculator Tests")
 struct FillFractionCalculatorTests {
-    @MainActor
+    private let calc = FillFractionCalculator()
+    private let bounds = WaterMaskBounds(emptyFraction: 0.1, fullFraction: 0.9)
+
     @Test("fraction increases with intake and stays within bounds")
-    func fractionBasicBehavior() async throws {
-        let calc = FillFractionCalculator()
-        let bounds = WaterMaskBounds(emptyFraction: 0.1, fullFraction: 0.9)
+    func fractionBasicBehavior() {
         let goal: CGFloat = 80
         let perTap: CGFloat = 10
 
@@ -195,11 +256,68 @@ struct FillFractionCalculatorTests {
         #expect(f4 > f1)
         #expect(f8 <= bounds.fullFraction)
     }
+
+    @Test("every tap raises the level, and the last one stays below the rim",
+          arguments: [(80, 10), (200, 5), (40, 20), (2400, 300)])
+    func monotonicUpToGoal(goal: Int, perTap: Int) {
+        var previous = calc.fraction(intakeOz: 0, goalOz: CGFloat(goal), bounds: bounds, perTapOz: CGFloat(perTap))
+        var intake = 0
+        while intake < goal {
+            intake = min(intake + perTap, goal)
+            let current = calc.fraction(intakeOz: CGFloat(intake), goalOz: CGFloat(goal), bounds: bounds, perTapOz: CGFloat(perTap))
+            #expect(current > previous, "Level should rise at \(intake)/\(goal)")
+            previous = current
+        }
+        #expect(previous <= bounds.fullFraction)
+    }
+
+    @Test("a zero goal shows an empty glass")
+    func zeroGoalIsEmpty() {
+        #expect(calc.fraction(intakeOz: 10, goalOz: 0, bounds: bounds, perTapOz: 10) == bounds.emptyFraction)
+    }
+
+    @Test("intake above the goal shows a full glass, not more")
+    func intakeAboveGoalIsFull() {
+        let atGoal = calc.fraction(intakeOz: 60, goalOz: 60, bounds: bounds, perTapOz: 10)
+        let aboveGoal = calc.fraction(intakeOz: 90, goalOz: 60, bounds: bounds, perTapOz: 10)
+        #expect(aboveGoal == atGoal)
+    }
+
+    @Test("a per-tap amount bigger than the goal fills in one tap")
+    func perTapBiggerThanGoal() {
+        let full = calc.fraction(intakeOz: 40, goalOz: 40, bounds: bounds, perTapOz: 100)
+        #expect(full > bounds.emptyFraction)
+        #expect(full <= bounds.fullFraction)
+    }
 }
 
-private extension Date {
-    /// Whole seconds, so the value round-trips exactly through UserDefaults.
-    func rounded() -> Date {
-        Date(timeIntervalSince1970: timeIntervalSince1970.rounded())
+@Suite("VolumeUnit Tests")
+struct VolumeUnitTests {
+    @Test("snap rounds to the step and clamps to the range")
+    func snapRoundsAndClamps() {
+        #expect(VolumeUnit.snap(2366, step: 100, range: 1200...6000) == 2400)
+        #expect(VolumeUnit.snap(296, step: 10, range: 150...600) == 300)
+        #expect(VolumeUnit.snap(50, step: 10, range: 150...600) == 150)
+        #expect(VolumeUnit.snap(9000, step: 100, range: 1200...6000) == 6000)
+    }
+
+    @Test("converting oz to ml and back returns the original amount")
+    func roundTrip() {
+        for oz in [5, 10, 80, 200] {
+            let ml = VolumeUnit.ml.convert(oz, from: .oz)
+            let back = VolumeUnit.oz.convert(Int(ml.rounded()), from: .ml)
+            #expect(Int(back.rounded()) == oz)
+        }
+        #expect(VolumeUnit.oz.convert(42, from: .oz) == 42)
+    }
+
+    @Test("default goal and per-tap amounts fit inside both units' slider ranges")
+    func defaultsFitRanges() {
+        for unit in VolumeUnit.allCases {
+            #expect(unit.goalRange.lowerBound % unit.goalStep == 0)
+            #expect(unit.perTapRange.lowerBound % unit.perTapStep == 0)
+        }
+        #expect(VolumeUnit.oz.goalRange.contains(80))
+        #expect(VolumeUnit.oz.perTapRange.contains(10))
     }
 }

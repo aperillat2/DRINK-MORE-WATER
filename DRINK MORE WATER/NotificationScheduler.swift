@@ -1,9 +1,12 @@
 import Foundation
-import UIKit
+import SwiftUI
 import UserNotifications
 
-protocol NotificationScheduling {
+// These types run off the main thread (see `ReminderSettings.apply`), so they opt out of the
+// project's default main-actor isolation.
+nonisolated protocol NotificationScheduling: Sendable {
     func requestAuthorization() async
+    func authorizationStatus() async -> UNAuthorizationStatus
     func scheduleForTodayAndTomorrow(startHour: Int, endHour: Int, intervalMinutes: Int, soundFile: String, lastDrinkDate: Date?)
     func scheduleForTomorrow(startHour: Int, endHour: Int, intervalMinutes: Int, soundFile: String)
     func cancelAll()
@@ -11,14 +14,15 @@ protocol NotificationScheduling {
     func clearBadge()
 }
 
-protocol UserNotificationCentering {
+nonisolated protocol UserNotificationCentering {
     func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool
+    func authorizationStatus() async -> UNAuthorizationStatus
     func removeAllPendingNotificationRequests()
     func add(_ request: UNNotificationRequest)
     func resetBadge()
 }
 
-struct DefaultUserNotificationCenter: UserNotificationCentering {
+nonisolated struct DefaultUserNotificationCenter: UserNotificationCentering {
     private let center: UNUserNotificationCenter
 
     init(center: UNUserNotificationCenter = .current()) {
@@ -27,6 +31,10 @@ struct DefaultUserNotificationCenter: UserNotificationCentering {
 
     func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool {
         try await center.requestAuthorization(options: options)
+    }
+
+    func authorizationStatus() async -> UNAuthorizationStatus {
+        await center.notificationSettings().authorizationStatus
     }
 
     func removeAllPendingNotificationRequests() {
@@ -38,16 +46,68 @@ struct DefaultUserNotificationCenter: UserNotificationCentering {
     }
 
     func resetBadge() {
-        if #available(iOS 17.0, *) {
-            center.setBadgeCount(0) { _ in }
-        } else {
-            DispatchQueue.main.async { UIApplication.shared.applicationIconBadgeNumber = 0 }
+        center.setBadgeCount(0) { _ in }
+    }
+}
+
+private struct NotificationSchedulerKey: EnvironmentKey {
+    static let defaultValue: NotificationScheduling = NotificationScheduler.shared
+}
+
+extension EnvironmentValues {
+    var notificationScheduler: NotificationScheduling {
+        get { self[NotificationSchedulerKey.self] }
+        set { self[NotificationSchedulerKey.self] = newValue }
+    }
+}
+
+/// The user's reminder preferences, plus the logic to (re)schedule reminders for them.
+nonisolated struct ReminderSettings: Equatable {
+    var startHour: Int
+    var endHour: Int
+    var intervalMinutes: Int
+    var soundFile: String
+    var muted: Bool
+
+    /// One serial queue for all scheduling work: it keeps the work off the main thread,
+    /// and guarantees that when several reschedules are requested in quick succession
+    /// (e.g. rapid taps), they run one at a time in order, so the latest one always wins.
+    /// (Separate `Task`s wouldn't guarantee that ordering.)
+    private static let queue = DispatchQueue(label: "ReminderSettings.scheduling", qos: .userInitiated)
+
+    /// Replaces all pending reminders based on these settings and today's progress.
+    /// - Parameters:
+    ///   - goalMetToday: when true, today's remaining reminders are skipped.
+    ///   - lastDrinkDate: today's last drink, used to time the next reminder.
+    func apply(to scheduler: NotificationScheduling, goalMetToday: Bool, lastDrinkDate: Date?) {
+        let settings = self
+        Self.queue.async {
+            if settings.muted {
+                scheduler.cancelAll()
+            } else if goalMetToday {
+                scheduler.scheduleForTomorrow(
+                    startHour: settings.startHour,
+                    endHour: settings.endHour,
+                    intervalMinutes: settings.intervalMinutes,
+                    soundFile: settings.soundFile
+                )
+            } else {
+                scheduler.scheduleForTodayAndTomorrow(
+                    startHour: settings.startHour,
+                    endHour: settings.endHour,
+                    intervalMinutes: settings.intervalMinutes,
+                    soundFile: settings.soundFile,
+                    lastDrinkDate: lastDrinkDate
+                )
+            }
         }
     }
 }
 
 /// Centralized helper that owns scheduling the hourly reminders.
-final class NotificationScheduler: NotificationScheduling {
+/// `@unchecked Sendable`: all stored properties are immutable after init, and it's only
+/// driven from `ReminderSettings`' serial queue (plus one-off async status checks).
+nonisolated final class NotificationScheduler: NotificationScheduling, @unchecked Sendable {
     static let shared: NotificationScheduling = NotificationScheduler()
 
     /// iOS keeps at most 64 pending local notifications per app and drops the rest,
@@ -79,6 +139,10 @@ final class NotificationScheduler: NotificationScheduling {
         } catch {
             print("Notification authorization failed: \(error)")
         }
+    }
+
+    func authorizationStatus() async -> UNAuthorizationStatus {
+        await centerProvider().authorizationStatus()
     }
 
     /// Schedules notifications for the remainder of today, tomorrow, and the following days
@@ -212,7 +276,7 @@ final class NotificationScheduler: NotificationScheduling {
     }
 }
 
-private extension NotificationScheduler {
+nonisolated private extension NotificationScheduler {
     /// Reminder times for one day: start hour, then every `minuteStep` minutes up to the end hour.
     /// Once-a-day mode (`minuteStep == 0`) returns just the start hour.
     func dailySlots(for day: Date, startHour: Int, endHour: Int, minuteStep: Int) -> [Date] {
@@ -260,8 +324,8 @@ private extension NotificationScheduler {
             for (index, time) in times.enumerated() {
                 guard remaining > 0 else { return }
                 let content = UNMutableNotificationContent()
-                content.title = "Drink more water"
-                content.body = "Tap the glass when you've had a drink."
+                content.title = String(localized: "Drink more water")
+                content.body = String(localized: "Tap the glass when you've had a drink.")
                 content.sound = sound
                 // A plain "1" means "you have a reminder". A running count would keep climbing
                 // across days because it can't know which earlier reminders were seen.

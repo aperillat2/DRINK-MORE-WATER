@@ -83,7 +83,7 @@ struct NotificationSchedulerTests {
         #expect(formattedTimes(tomorrowTimes) == ["08:15"])
     }
 
-    @Test("scheduleForTomorrow clears pending and only schedules tomorrow")
+    @Test("scheduleForTomorrow clears pending, skips today, and starts with tomorrow's times")
     func scheduleForTomorrowOnlySchedulesNextDay() async throws {
         let nowDate = date("2000-01-01T12:00:00Z")
         let fakeCenter = FakeUserNotificationCenter()
@@ -199,6 +199,60 @@ struct NotificationSchedulerTests {
         #expect(fakeCenter.requests?.count == countBefore)
     }
 
+    @Test("a start hour after the end hour schedules nothing instead of misbehaving")
+    func invertedWindowSchedulesNothing() {
+        let nowDate = date("2000-01-01T06:00:00Z")
+        let fakeCenter = FakeUserNotificationCenter()
+        let scheduler = makeScheduler(center: fakeCenter, now: nowDate)
+
+        scheduler.scheduleForTodayAndTomorrow(startHour: 22, endHour: 6, intervalMinutes: 60, soundFile: "sound", lastDrinkDate: nil)
+
+        #expect(fakeCenter.removedPending == true)
+        #expect(fakeCenter.requests == nil)
+    }
+
+    @Test("a drink after today's window closes skips the rest of today")
+    func lastDrinkAfterWindow() throws {
+        let nowDate = date("2000-01-01T21:30:00Z")
+        let lastDrink = date("2000-01-01T21:15:00Z")
+        let fakeCenter = FakeUserNotificationCenter()
+        let scheduler = makeScheduler(center: fakeCenter, now: nowDate)
+
+        scheduler.scheduleForTodayAndTomorrow(startHour: 7, endHour: 21, intervalMinutes: 60, soundFile: "sound", lastDrinkDate: lastDrink)
+
+        let scheduled = try #require(fakeCenter.requests)
+        #expect(scheduled.filter { $0.identifier.hasPrefix("today_") }.isEmpty)
+        #expect(triggerDate(from: scheduled[0]) == date("2000-01-02T07:00:00Z"))
+    }
+
+    @Test("reminders continue one interval after the last drink")
+    func remindersFollowLastDrink() throws {
+        let nowDate = date("2000-01-01T10:20:00Z")
+        let lastDrink = date("2000-01-01T10:10:00Z")
+        let fakeCenter = FakeUserNotificationCenter()
+        let scheduler = makeScheduler(center: fakeCenter, now: nowDate)
+
+        scheduler.scheduleForTodayAndTomorrow(startHour: 7, endHour: 12, intervalMinutes: 30, soundFile: "sound", lastDrinkDate: lastDrink)
+
+        let scheduled = try #require(fakeCenter.requests)
+        let today = scheduled.filter { $0.identifier.hasPrefix("today_") }.compactMap { timeComponents(from: $0) }
+        #expect(formattedTimes(today) == ["10:40", "11:10", "11:40"])
+    }
+
+    @Test("cancelAll removes pending reminders and clears the badge")
+    func cancelAllClearsEverything() {
+        let nowDate = date("2000-01-01T06:00:00Z")
+        let fakeCenter = FakeUserNotificationCenter()
+        let scheduler = makeScheduler(center: fakeCenter, now: nowDate)
+        scheduler.scheduleForTodayAndTomorrow(startHour: 7, endHour: 9, intervalMinutes: 60, soundFile: "sound", lastDrinkDate: nil)
+        let badgeResetsBefore = fakeCenter.badgeResetCount
+
+        scheduler.cancelAll()
+
+        #expect(fakeCenter.requests == nil)
+        #expect(fakeCenter.badgeResetCount == badgeResetsBefore + 1)
+    }
+
     private func makeScheduler(center: FakeUserNotificationCenter, now nowDate: Date) -> NotificationScheduler {
         NotificationScheduler(centerProvider: { center }, calendar: calendar, now: { nowDate })
     }
@@ -220,6 +274,10 @@ private final class FakeUserNotificationCenter: UserNotificationCentering {
     func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool {
         authorizationOptions = options
         return true
+    }
+
+    func authorizationStatus() async -> UNAuthorizationStatus {
+        .authorized
     }
 
     func removeAllPendingNotificationRequests() {

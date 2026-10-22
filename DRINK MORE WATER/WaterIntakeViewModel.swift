@@ -1,9 +1,9 @@
 import Foundation
-import SwiftUI
-import Combine
+import Observation
 
 @MainActor
-final class WaterIntakeViewModel: ObservableObject {
+@Observable
+final class WaterIntakeViewModel {
     /// UserDefaults keys. Shared with the UI-test reset in `DRINK_MORE_WATERApp`.
     enum Keys {
         static let intake = "intakeOz"
@@ -16,28 +16,31 @@ final class WaterIntakeViewModel: ObservableObject {
     }
 
     /// Injected so tests can use an isolated store instead of `UserDefaults.standard`.
-    private let defaults: UserDefaults
+    @ObservationIgnored private let defaults: UserDefaults
+    /// Injected so tests can control "now" (e.g. to cross midnight).
+    @ObservationIgnored private let now: () -> Date
+    @ObservationIgnored private let calendar: Calendar
 
     /// Unit that all stored amounts (intake, goal, per tap) are expressed in.
     /// Change it with `setUnit(_:)` so existing values get converted.
-    @Published private(set) var unit: VolumeUnit = .oz {
+    private(set) var unit: VolumeUnit = .oz {
         didSet { defaults.set(unit.rawValue, forKey: Keys.unit) }
     }
 
     // Amounts below are in the current `unit` (property/storage names predate ml support).
-    @Published var intakeOz: Int = 0 {
+    var intakeOz: Int = 0 {
         didSet { defaults.set(intakeOz, forKey: Keys.intake) }
     }
-    @Published var lastIntakeDateString: String = "" {
+    var lastIntakeDateString: String = "" {
         didSet { defaults.set(lastIntakeDateString, forKey: Keys.lastIntakeDate) }
     }
-    @Published var dailyGoalOz: Int = 80 {
+    var dailyGoalOz: Int = 80 {
         didSet { defaults.set(dailyGoalOz, forKey: Keys.dailyGoal) }
     }
-    @Published var goalMetDateString: String = "" {
+    var goalMetDateString: String = "" {
         didSet { defaults.set(goalMetDateString, forKey: Keys.goalMetDate) }
     }
-    @Published var ozPerTap: Int = 10 {
+    var ozPerTap: Int = 10 {
         didSet {
             let range = unit.perTapRange
             let clamped = min(max(ozPerTap, range.lowerBound), range.upperBound)
@@ -50,7 +53,7 @@ final class WaterIntakeViewModel: ObservableObject {
     }
 
     /// When the user last tapped the glass. Used to time the next reminder.
-    @Published private(set) var lastDrinkDate: Date? = nil {
+    private(set) var lastDrinkDate: Date? = nil {
         didSet {
             if let lastDrinkDate {
                 defaults.set(lastDrinkDate.timeIntervalSince1970, forKey: Keys.lastDrinkTimestamp)
@@ -60,8 +63,10 @@ final class WaterIntakeViewModel: ObservableObject {
         }
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, now: @escaping () -> Date = Date.init, calendar: Calendar = .current) {
         self.defaults = defaults
+        self.now = now
+        self.calendar = calendar
         // Unit must be set first so the per-tap clamp uses the right range.
         unit = VolumeUnit(rawValue: defaults.string(forKey: Keys.unit) ?? "") ?? .oz
         intakeOz = defaults.integer(forKey: Keys.intake)
@@ -74,22 +79,26 @@ final class WaterIntakeViewModel: ObservableObject {
         }
     }
 
+    private var todayString: String {
+        DateUtils.dayString(for: now(), calendar: calendar)
+    }
+
     /// The last drink time, but only if it happened today; otherwise nil.
     var lastDrinkToday: Date? {
-        guard let lastDrinkDate, Calendar.current.isDateInToday(lastDrinkDate) else { return nil }
+        guard let lastDrinkDate, calendar.isDate(lastDrinkDate, inSameDayAs: now()) else { return nil }
         return lastDrinkDate
     }
 
-    func recordDrink(at date: Date = Date()) {
-        lastDrinkDate = date
+    func recordDrink() {
+        lastDrinkDate = now()
     }
 
     var isGoalMetToday: Bool {
-        goalMetDateString == DateUtils.todayString()
+        goalMetDateString == todayString
     }
 
     func markGoalMetToday() {
-        goalMetDateString = DateUtils.todayString()
+        goalMetDateString = todayString
     }
 
     func clearGoalMetFlag() {
@@ -97,13 +106,34 @@ final class WaterIntakeViewModel: ObservableObject {
     }
 
     func resetIfNeeded() {
-        let today = DateUtils.todayString()
-        if lastIntakeDateString != today {
-            intakeOz = 0
-            lastIntakeDateString = today
-            clearGoalMetFlag()
-            lastDrinkDate = nil
+        if lastIntakeDateString != todayString {
+            resetToday()
         }
+    }
+
+    /// Empties today's glass (used at the start of a new day and by "Reset today's intake").
+    func resetToday() {
+        intakeOz = 0
+        lastIntakeDateString = todayString
+        clearGoalMetFlag()
+        lastDrinkDate = nil
+    }
+
+    /// Call after the daily goal changes. Lowering the goal to or below today's intake counts
+    /// as meeting it; raising it above the intake again un-meets it.
+    /// - Returns: true if the goal-met state changed (so reminders should be rescheduled).
+    @discardableResult
+    func syncGoalMetState() -> Bool {
+        let reached = intakeOz >= dailyGoalOz
+        if reached && !isGoalMetToday {
+            markGoalMetToday()
+            return true
+        }
+        if !reached && isGoalMetToday {
+            clearGoalMetFlag()
+            return true
+        }
+        return false
     }
 
     /// Switches units, converting the goal, per-tap amount and today's intake.

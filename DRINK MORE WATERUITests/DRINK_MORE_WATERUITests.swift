@@ -10,53 +10,90 @@ import XCTest
 final class DRINK_MORE_WATERUITests: XCTestCase {
 
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
         // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
     }
 
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
-    }
+    // The intake label's accessibility label is the spoken form, e.g. "20 of 80 ounces"
+    // (the screen shows "20 / 80 oz").
 
     @MainActor
     func testTapToFillReachesGoal() throws {
-        let app = makeApp(resetState: true)
-        app.launch()
-        dismissNotificationPermissionAlertIfPresent()
+        let app = launchFreshApp()
 
         let glass = app.descendants(matching: .any)["waterGlass"]
         XCTAssertTrue(glass.waitForExistence(timeout: 3), "waterGlass element did not appear")
 
         let intakeLabel = app.staticTexts["intakeLabel"]
         XCTAssertTrue(intakeLabel.waitForExistence(timeout: 3), "intakeLabel element did not appear")
-        XCTAssertTrue(intakeLabel.waitForLabel("0 / 80 oz"), "Initial intake label not reset to 0 / 80 oz")
+        XCTAssertTrue(intakeLabel.waitForLabel("0 of 80 ounces"), "Initial intake not reset to 0 / 80 oz")
 
         let totalSteps = 8
         for step in 1...totalSteps {
             glass.tap()
-            let expected = "\(min(step * 10, 80)) / 80 oz"
+            let expected = "\(min(step * 10, 80)) of 80 ounces"
             XCTAssertTrue(intakeLabel.waitForLabel(expected, timeout: 3), "Expected intake label to update to \(expected)")
         }
 
         glass.tap()
-        XCTAssertTrue(intakeLabel.waitForLabel("80 / 80 oz", timeout: 3), "Intake label should stay capped at goal after extra tap")
+        XCTAssertTrue(intakeLabel.waitForLabel("80 of 80 ounces", timeout: 3), "Intake should stay capped at goal after extra tap")
     }
 
+    @MainActor
+    func testSwitchingToMillilitersConvertsTheGoal() throws {
+        let app = launchFreshApp()
+        let intakeLabel = app.staticTexts["intakeLabel"]
+        XCTAssertTrue(intakeLabel.waitForLabel("0 of 80 ounces", timeout: 3))
+
+        openSettings(in: app)
+        let mlSegment = app.segmentedControls["volumeUnitPicker"].buttons["ml"]
+        XCTAssertTrue(mlSegment.waitForExistence(timeout: 3), "Units picker not found in Settings")
+        mlSegment.tap()
+        app.buttons["Apply"].tap()
+
+        // Numbers are formatted for the locale, so the goal reads "2,400" in English.
+        XCTAssertTrue(intakeLabel.waitForLabel("0 of 2,400 milliliters", timeout: 3), "Goal should convert to 2,400 ml")
+    }
+
+    @MainActor
+    func testResetTodaysIntake() throws {
+        let app = launchFreshApp()
+        let glass = app.descendants(matching: .any)["waterGlass"]
+        let intakeLabel = app.staticTexts["intakeLabel"]
+        XCTAssertTrue(glass.waitForExistence(timeout: 3))
+
+        glass.tap()
+        glass.tap()
+        XCTAssertTrue(intakeLabel.waitForLabel("20 of 80 ounces", timeout: 3))
+
+        openSettings(in: app)
+        app.buttons["Reset today's intake"].tap()
+        let resetButton = app.alerts.buttons["Reset"]
+        XCTAssertTrue(resetButton.waitForExistence(timeout: 3), "Reset confirmation did not appear")
+        resetButton.tap()
+
+        // The Settings sheet may still be open after confirming; close it if so.
+        let cancel = app.buttons["Cancel"]
+        if cancel.waitForExistence(timeout: 1) { cancel.tap() }
+
+        XCTAssertTrue(intakeLabel.waitForLabel("0 of 80 ounces", timeout: 3), "Intake should be back to 0")
+    }
 }
 
 private extension DRINK_MORE_WATERUITests {
-    func makeApp(resetState: Bool = false) -> XCUIApplication {
+    /// Launches with all saved state wiped and the splash/walkthrough skipped.
+    func launchFreshApp() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments.append("-UITestsSkipSplash")
-        app.launchArguments.append("-UITestsForceButton")
-        if resetState {
-            app.launchArguments.append("-UITestsResetState")
-        }
+        app.launchArguments += ["-UITestsSkipSplash", "-UITestsResetState"]
+        app.launch()
+        dismissNotificationPermissionAlertIfPresent()
         return app
+    }
+
+    func openSettings(in app: XCUIApplication) {
+        let gear = app.buttons["settingsButton"]
+        XCTAssertTrue(gear.waitForExistence(timeout: 3), "Settings button not found")
+        gear.tap()
     }
 
     /// On a fresh simulator the system asks for notification permission at launch.

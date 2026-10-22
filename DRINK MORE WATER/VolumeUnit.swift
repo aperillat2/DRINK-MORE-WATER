@@ -12,6 +12,14 @@ enum VolumeUnit: String, CaseIterable, Identifiable {
     /// Short label shown next to amounts (e.g. "80 oz").
     var label: String { rawValue }
 
+    /// Full unit name for VoiceOver, which would otherwise read "oz" letter by letter.
+    var spokenName: String {
+        switch self {
+        case .oz: return String(localized: "ounces")
+        case .ml: return String(localized: "milliliters")
+        }
+    }
+
     var perTapRange: ClosedRange<Int> {
         switch self {
         case .oz: return 5...20
