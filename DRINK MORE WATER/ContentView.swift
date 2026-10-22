@@ -172,6 +172,7 @@ struct ContentView: View {
             )
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
+            .settingsSheetSizing()
         }
         .onAppear {
             // Older versions allowed an End hour before Start, which schedules nothing.
@@ -262,6 +263,8 @@ private extension ContentView {
                 }
                 .popover(isPresented: $showOzPerTapPicker) {
                     perTapPicker
+                        // Keep it a small bubble on iPhone instead of a full-screen sheet.
+                        .presentationCompactAdaptation(.popover)
                 }
             }
             .padding(.top, 8)
@@ -385,6 +388,21 @@ private extension ContentView {
 
     func refreshNotificationsDenied() async {
         notificationsDenied = await notificationScheduler.authorizationStatus() == .denied
+    }
+}
+
+private extension View {
+    /// On iPad the Settings sheet is a centered window whose default height is too short for
+    /// the whole list (the App Version / Help row gets cut off). This keeps the standard form
+    /// width but sizes the height to fit the list. No effect on iPhone, where sheets fill the screen.
+    @ViewBuilder
+    func settingsSheetSizing() -> some View {
+        if #available(iOS 18.0, *) {
+            frame(idealHeight: 720)
+                .presentationSizing(.form.fitted(horizontal: false, vertical: true))
+        } else {
+            self
+        }
     }
 }
 
