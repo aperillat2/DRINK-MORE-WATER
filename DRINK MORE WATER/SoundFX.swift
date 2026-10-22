@@ -13,7 +13,21 @@ final class SoundFX: NSObject {
 
     private override init() {
         super.init()
+        // Set the category before preparing the player so it never runs under the
+        // default (soloAmbient) category, which pauses other apps' audio.
+        configureCategory()
         preloadSplash()
+    }
+
+    /// `.ambient` mixes with other audio (Music, podcasts, audiobooks) by default.
+    /// Don't pass `.mixWithOthers` here: it's only valid for playback/playAndRecord/multiRoute
+    /// and makes `setCategory` throw for `.ambient`.
+    private func configureCategory() {
+        do {
+            try session.setCategory(.ambient, mode: .default)
+        } catch {
+            print("Failed to set audio session category: \(error)")
+        }
     }
 
     func playSplash() {
@@ -45,7 +59,7 @@ final class SoundFX: NSObject {
         deactivateWorkItem?.cancel()
         guard !sessionActivated else { return }
         do {
-            try session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+            if session.category != .ambient { configureCategory() }
             try session.setActive(true, options: [])
             sessionActivated = true
         } catch {

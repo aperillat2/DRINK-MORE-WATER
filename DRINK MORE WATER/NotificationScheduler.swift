@@ -7,6 +7,8 @@ protocol NotificationScheduling {
     func scheduleForTodayAndTomorrow(startHour: Int, endHour: Int, intervalMinutes: Int, soundFile: String, lastDrinkDate: Date?)
     func scheduleForTomorrow(startHour: Int, endHour: Int, intervalMinutes: Int, soundFile: String)
     func cancelAll()
+    /// Clears the app icon badge without touching scheduled reminders.
+    func clearBadge()
 }
 
 protocol UserNotificationCentering {
@@ -48,6 +50,14 @@ struct DefaultUserNotificationCenter: UserNotificationCentering {
 final class NotificationScheduler: NotificationScheduling {
     static let shared: NotificationScheduling = NotificationScheduler()
 
+    /// iOS keeps at most 64 pending local notifications per app and drops the rest,
+    /// so never submit more than this (earliest first).
+    static let maxPendingNotifications = 64
+
+    /// Number of days after today to pre-schedule (tomorrow plus 6 more), so reminders
+    /// keep coming for a week even if the app isn't opened. Each launch/tap reschedules.
+    static let futureDaysToSchedule = 7
+
     private let centerProvider: () -> UserNotificationCentering
     private let calendar: Calendar
     private let now: () -> Date
@@ -71,7 +81,8 @@ final class NotificationScheduler: NotificationScheduling {
         }
     }
 
-    /// Schedules notifications for the remainder of today and all of tomorrow.
+    /// Schedules notifications for the remainder of today, tomorrow, and the following days
+    /// (up to `futureDaysToSchedule` days and `maxPendingNotifications` total).
     /// - Parameters:
     ///   - startHour: first hour (0-23) to allow notifications
     ///   - endHour: last hour (0-23) to allow notifications
@@ -89,24 +100,6 @@ final class NotificationScheduler: NotificationScheduling {
         }
         let minuteStep = intervalMinutes > 0 ? intervalMinutes : 0
         let intervalSeconds: TimeInterval = minuteStep > 0 ? TimeInterval(minuteStep * 60) : 24 * 60 * 60
-
-        func times(for day: Date) -> [Date] {
-            guard let start = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: day),
-                  let end = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: day),
-                  start <= end else { return [] }
-            if minuteStep == 0 {
-                return [start]
-            }
-            var slots: [Date] = []
-            var t = start
-            while t <= end {
-                slots.append(t)
-                let next = calendar.date(byAdding: .minute, value: minuteStep, to: t) ?? t.addingTimeInterval(intervalSeconds)
-                if next == t { break }
-                t = next
-            }
-            return slots
-        }
 
         let windowStart = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: today)
         let windowEnd = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: today)
@@ -137,7 +130,7 @@ final class NotificationScheduler: NotificationScheduling {
         }
 
         let firstFromDrink = clampedFirstReminder()
-        let todayTimes = times(for: today)
+        let todayTimes = dailySlots(for: today, startHour: startHour, endHour: endHour, minuteStep: minuteStep)
 
         let filteredToday: [Date] = {
             guard let windowEnd else { return todayTimes.filter { $0 > today } }
@@ -166,59 +159,22 @@ final class NotificationScheduler: NotificationScheduling {
 
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today.addingTimeInterval(86400)
         let tomorrowTimes: [Date] = {
-            if minuteStep == 0 {
-                if let first = firstFromDrink {
-                    if calendar.isDate(first, inSameDayAs: tomorrow) {
-                        return [first]
-                    }
-                    if calendar.isDate(first, inSameDayAs: today),
-                       let next = alignDailyReminder(first.addingTimeInterval(intervalSeconds)),
-                       calendar.isDate(next, inSameDayAs: tomorrow) {
-                        return [next]
-                    }
+            if minuteStep == 0, let first = firstFromDrink {
+                if calendar.isDate(first, inSameDayAs: tomorrow) {
+                    return [first]
                 }
-                return times(for: tomorrow)
-            } else {
-                return times(for: tomorrow)
+                if calendar.isDate(first, inSameDayAs: today),
+                   let next = alignDailyReminder(first.addingTimeInterval(intervalSeconds)),
+                   calendar.isDate(next, inSameDayAs: tomorrow) {
+                    return [next]
+                }
             }
+            return dailySlots(for: tomorrow, startHour: startHour, endHour: endHour, minuteStep: minuteStep)
         }()
 
-        let sound: UNNotificationSound? = {
-            // Empty selection means no sound
-            if soundFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return nil
-            }
-            let resolvedName = resolveSoundFilename(baseName: soundFile)
-            if let name = resolvedName {
-                return UNNotificationSound(named: UNNotificationSoundName(name))
-            }
-            return .default
-        }()
-
-        func makeContent(badge: Int) -> UNMutableNotificationContent {
-            let content = UNMutableNotificationContent()
-            content.title = "Drink more water"
-            content.body = "Tap the glass when you've had a drink."
-            content.sound = sound
-            content.badge = NSNumber(value: badge)
-            return content
-        }
-
-        var badgeCount = 0
-        func schedule(date: Date, id: String) {
-            badgeCount += 1
-            let components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
-            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-            let request = UNNotificationRequest(identifier: id, content: makeContent(badge: badgeCount), trigger: trigger)
-            center.add(request)
-        }
-
-        for (index, time) in filteredToday.enumerated() {
-            schedule(date: time, id: "today_\(index)")
-        }
-        for (index, time) in tomorrowTimes.enumerated() {
-            schedule(date: time, id: "tomorrow_\(index)")
-        }
+        let groups = [("today", filteredToday), ("tomorrow", tomorrowTimes)]
+            + laterDays(after: tomorrow, tomorrowTimes: tomorrowTimes, startHour: startHour, endHour: endHour, minuteStep: minuteStep)
+        submit(groups, soundFile: soundFile, to: center)
     }
 
     func cancelAll() {
@@ -227,6 +183,11 @@ final class NotificationScheduler: NotificationScheduling {
         center.resetBadge()
     }
 
+    func clearBadge() {
+        centerProvider().resetBadge()
+    }
+
+    /// Schedules nothing for today; starts with tomorrow (used once today's goal is met).
     /// - Parameters:
     ///   - startHour: first hour (0-23) to allow notifications
     ///   - endHour: last hour (0-23) to allow notifications
@@ -241,66 +202,90 @@ final class NotificationScheduler: NotificationScheduling {
         if intervalMinutes < 0 {
             return
         }
-        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today.addingTimeInterval(86400)
-
         let minuteStep = intervalMinutes > 0 ? intervalMinutes : 0
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today.addingTimeInterval(86400)
+        let tomorrowTimes = dailySlots(for: tomorrow, startHour: startHour, endHour: endHour, minuteStep: minuteStep)
 
-        func times(for day: Date) -> [Date] {
-            guard let start = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: day),
-                  let end = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: day),
-                  start <= end else { return [] }
-            if minuteStep == 0 {
-                return [start]
-            }
-            var times: [Date] = []
-            var t = start
-            while t <= end {
-                times.append(t)
-                let next = calendar.date(byAdding: .minute, value: minuteStep, to: t) ?? t.addingTimeInterval(TimeInterval(minuteStep * 60))
-                if next == t { break }
-                t = next
-            }
-            return times
-        }
-
-        let tomorrowTimes = times(for: tomorrow)
-
-        let sound: UNNotificationSound? = {
-            if soundFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return nil
-            }
-            let resolvedName = resolveSoundFilename(baseName: soundFile)
-            if let name = resolvedName {
-                return UNNotificationSound(named: UNNotificationSoundName(name))
-            }
-            return .default
-        }()
-
-        func makeContent(badge: Int) -> UNMutableNotificationContent {
-            let content = UNMutableNotificationContent()
-            content.title = "Drink more water"
-            content.body = "Tap the glass when you've had a drink."
-            content.sound = sound
-            content.badge = NSNumber(value: badge)
-            return content
-        }
-
-        var badgeCount = 0
-        func schedule(date: Date, id: String) {
-            badgeCount += 1
-            let components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
-            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-            let request = UNNotificationRequest(identifier: id, content: makeContent(badge: badgeCount), trigger: trigger)
-            center.add(request)
-        }
-
-        for (index, time) in tomorrowTimes.enumerated() {
-            schedule(date: time, id: "tomorrow_\(index)")
-        }
+        let groups = [("tomorrow", tomorrowTimes)]
+            + laterDays(after: tomorrow, tomorrowTimes: tomorrowTimes, startHour: startHour, endHour: endHour, minuteStep: minuteStep)
+        submit(groups, soundFile: soundFile, to: center)
     }
 }
 
 private extension NotificationScheduler {
+    /// Reminder times for one day: start hour, then every `minuteStep` minutes up to the end hour.
+    /// Once-a-day mode (`minuteStep == 0`) returns just the start hour.
+    func dailySlots(for day: Date, startHour: Int, endHour: Int, minuteStep: Int) -> [Date] {
+        guard let start = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: day),
+              let end = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: day),
+              start <= end else { return [] }
+        if minuteStep == 0 {
+            return [start]
+        }
+        var slots: [Date] = []
+        var t = start
+        while t <= end {
+            slots.append(t)
+            let next = calendar.date(byAdding: .minute, value: minuteStep, to: t) ?? t.addingTimeInterval(TimeInterval(minuteStep * 60))
+            if next == t { break }
+            t = next
+        }
+        return slots
+    }
+
+    /// Reminder groups for the days after tomorrow, identified as "day2", "day3", ...
+    /// In once-a-day mode they reuse tomorrow's time of day so the daily reminder stays consistent.
+    func laterDays(after tomorrow: Date, tomorrowTimes: [Date], startHour: Int, endHour: Int, minuteStep: Int) -> [(String, [Date])] {
+        guard Self.futureDaysToSchedule > 1 else { return [] }
+        return (1..<Self.futureDaysToSchedule).compactMap { offset in
+            guard let day = calendar.date(byAdding: .day, value: offset, to: tomorrow) else { return nil }
+            let times: [Date]
+            if minuteStep == 0, let tomorrowTime = tomorrowTimes.first {
+                let comps = calendar.dateComponents([.hour, .minute], from: tomorrowTime)
+                times = calendar.date(bySettingHour: comps.hour ?? startHour, minute: comps.minute ?? 0, second: 0, of: day).map { [$0] } ?? []
+            } else {
+                times = dailySlots(for: day, startHour: startHour, endHour: endHour, minuteStep: minuteStep)
+            }
+            return ("day\(offset + 1)", times)
+        }
+    }
+
+    /// Adds the requests in order, stopping at the iOS pending-notification limit
+    /// so the earliest reminders are always the ones kept.
+    func submit(_ groups: [(String, [Date])], soundFile: String, to center: UserNotificationCentering) {
+        let sound = notificationSound(for: soundFile)
+        var remaining = Self.maxPendingNotifications
+
+        for (prefix, times) in groups {
+            for (index, time) in times.enumerated() {
+                guard remaining > 0 else { return }
+                let content = UNMutableNotificationContent()
+                content.title = "Drink more water"
+                content.body = "Tap the glass when you've had a drink."
+                content.sound = sound
+                // A plain "1" means "you have a reminder". A running count would keep climbing
+                // across days because it can't know which earlier reminders were seen.
+                content.badge = 1
+
+                let components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: time)
+                let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+                center.add(UNNotificationRequest(identifier: "\(prefix)_\(index)", content: content, trigger: trigger))
+                remaining -= 1
+            }
+        }
+    }
+
+    func notificationSound(for soundFile: String) -> UNNotificationSound? {
+        // Empty selection means no sound
+        if soundFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return nil
+        }
+        if let name = resolveSoundFilename(baseName: soundFile) {
+            return UNNotificationSound(named: UNNotificationSoundName(name))
+        }
+        return .default
+    }
+
     func resolveSoundFilename(baseName: String) -> String? {
         guard !baseName.isEmpty else { return nil }
         let fm = FileManager.default

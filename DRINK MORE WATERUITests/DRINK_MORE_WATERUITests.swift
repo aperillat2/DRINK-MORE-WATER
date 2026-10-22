@@ -26,6 +26,7 @@ final class DRINK_MORE_WATERUITests: XCTestCase {
     func testTapToFillReachesGoal() throws {
         let app = makeApp(resetState: true)
         app.launch()
+        dismissNotificationPermissionAlertIfPresent()
 
         let glass = app.descendants(matching: .any)["waterGlass"]
         XCTAssertTrue(glass.waitForExistence(timeout: 3), "waterGlass element did not appear")
@@ -56,6 +57,16 @@ private extension DRINK_MORE_WATERUITests {
             app.launchArguments.append("-UITestsResetState")
         }
         return app
+    }
+
+    /// On a fresh simulator the system asks for notification permission at launch.
+    /// That alert belongs to SpringBoard (not the app) and blocks taps until dismissed.
+    func dismissNotificationPermissionAlertIfPresent() {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.alerts.buttons["Allow"]
+        if allow.waitForExistence(timeout: 2) {
+            allow.tap()
+        }
     }
 }
 

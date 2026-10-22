@@ -78,6 +78,7 @@ struct ContentView: View {
         haptics.impactLight()
         if !muteTapSound { sfx.playSplash() }
         viewModel.intakeOz = step.newValue
+        viewModel.recordDrink()
 
         if step.reachedGoal {
             viewModel.markGoalMetToday()
@@ -97,7 +98,7 @@ struct ContentView: View {
             Color(.systemBlue).ignoresSafeArea()
             
             VStack(spacing: 8) {
-                Text("\(viewModel.intakeOz) / \(viewModel.dailyGoalOz) oz")
+                Text("\(viewModel.intakeOz) / \(viewModel.dailyGoalOz) \(viewModel.unit.label)")
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(.white)
                     .accessibilityIdentifier("intakeLabel")
@@ -120,7 +121,7 @@ struct ContentView: View {
                             Button {
                                 showOzPerTapPicker = true
                             } label: {
-                                Text("\(viewModel.ozPerTap) oz")
+                                Text("\(viewModel.ozPerTap) \(viewModel.unit.label)")
                                     .fontWeight(.semibold)
                                     .underline()
                             }
@@ -138,18 +139,18 @@ struct ContentView: View {
                                 VStack(spacing: 16) {
                                     Text("Water Added Per Tap")
                                         .font(.title2)
-                                    Text("\(viewModel.ozPerTap) oz")
+                                    Text("\(viewModel.ozPerTap) \(viewModel.unit.label)")
                                         .font(.title.weight(.bold))
                                     Slider(
                                         value: Binding(
                                             get: { Double(viewModel.ozPerTap) },
                                             set: { viewModel.ozPerTap = Int($0.rounded()) }
                                         ),
-                                        in: 5...20,
-                                        step: 1
+                                        in: Double(viewModel.unit.perTapRange.lowerBound)...Double(viewModel.unit.perTapRange.upperBound),
+                                        step: Double(viewModel.unit.perTapStep)
                                     )
                                     .tint(.blue)
-                                    Text("Choose between 5 and 20 oz.")
+                                    Text("Choose between \(viewModel.unit.perTapRange.lowerBound) and \(viewModel.unit.perTapRange.upperBound) \(viewModel.unit.label).")
                                         .font(.title3)
                                         .foregroundStyle(.secondary)
                                     Button("Done") { showOzPerTapPicker = false }
@@ -167,15 +168,15 @@ struct ContentView: View {
                     HStack {
                         Text("Daily goal").font(.title3).foregroundStyle(.white)
                         Spacer()
-                        Text("\(viewModel.dailyGoalOz) oz").font(.title3).foregroundStyle(.white.opacity(0.75))
+                        Text("\(viewModel.dailyGoalOz) \(viewModel.unit.label)").font(.title3).foregroundStyle(.white.opacity(0.75))
                     }
                     Slider(
                         value: Binding(
                             get: { Double(viewModel.dailyGoalOz) },
                             set: { viewModel.dailyGoalOz = Int($0.rounded()) }
                         ),
-                        in: 40...200,
-                        step: 10
+                        in: Double(viewModel.unit.goalRange.lowerBound)...Double(viewModel.unit.goalRange.upperBound),
+                        step: Double(viewModel.unit.goalStep)
                     )
                     .allowsHitTesting(walkthroughStep == nil || walkthroughStep == 2)
                     .tint(.white)
@@ -223,7 +224,7 @@ struct ContentView: View {
                 viewModel.clearGoalMetFlag()
                 rescheduleNotifications(lastDrinkDate: Date())
             }
-        } message: { Text("This will set today's filled amount back to 0 oz.") }
+        } message: { Text("This will set today's filled amount back to 0 \(viewModel.unit.label).") }
         .sheet(isPresented: $showNotificationSettings) {
             NotificationSettingsView(
                 startHour: $notifStartHour,
@@ -232,6 +233,10 @@ struct ContentView: View {
                 selectedSound: $notifSoundFile,
                 muteTapSound: $muteTapSound,
                 muteNotifications: $muteNotifications,
+                volumeUnit: Binding(
+                    get: { viewModel.unit },
+                    set: { viewModel.setUnit($0) }
+                ),
                 onApply: {
                     // Re-schedule notifications using current or last drink time
                     let lastDrinkDate = Date() // use now as baseline when changing settings
@@ -266,16 +271,12 @@ struct ContentView: View {
 
             Task { @MainActor in
                 await notificationScheduler.requestAuthorization()
-                let lastDrink: Date? = {
-                    if !viewModel.lastIntakeDateString.isEmpty {
-                        return Date()
-                    }
-                    return nil
-                }()
                 if viewModel.isGoalMetToday {
                     scheduleNotificationsForTomorrow()
                 } else {
-                    rescheduleNotifications(lastDrinkDate: lastDrink)
+                    // Use the real time of today's last tap (not "now"), so simply opening
+                    // the app doesn't push the next reminder back.
+                    rescheduleNotifications(lastDrinkDate: viewModel.lastDrinkToday)
                 }
             }
         }
@@ -283,6 +284,8 @@ struct ContentView: View {
             if newPhase == .active {
                 frozenPhase = nil
                 viewModel.resetIfNeeded()
+                // The user has seen the app, so the reminder badge is no longer needed.
+                notificationScheduler.clearBadge()
             } else {
                 let t = Date.timeIntervalSinceReferenceDate
                 frozenPhase = WaterGlassView.rippleSeed + t * WaterGlassView.waveSpeed
@@ -469,8 +472,8 @@ private extension ContentView {
             )
         case 3:
             return (
-                "Set ounces per tap.",
-                "Change how much water gets added each time by adjusting the oz value.",
+                "Set amount per tap.",
+                "Change how much water gets added each time by adjusting the \(viewModel.unit.label) value.",
                 true
             )
         default:
@@ -639,6 +642,7 @@ private struct NotificationSettingsView: View {
     @Binding var selectedSound: String
     @Binding var muteTapSound: Bool
     @Binding var muteNotifications: Bool
+    @Binding var volumeUnit: VolumeUnit
     var onApply: () -> Void
     var onResetToday: () -> Void
     var onShowHelp: () -> Void
@@ -648,7 +652,24 @@ private struct NotificationSettingsView: View {
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text("Notification Window")) {
+                Section(header: Text("General")) {
+                    LabeledContent("Units") {
+                        Picker("Units", selection: $volumeUnit) {
+                            Text("oz").tag(VolumeUnit.oz)
+                            Text("ml").tag(VolumeUnit.ml)
+                        }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
+                        .accessibilityIdentifier("volumeUnitPicker")
+                    }
+                    Toggle("Mute Add Water Sound", isOn: $muteTapSound)
+                }
+
+                Section(
+                    header: Text("Reminders"),
+                    footer: Text("Reminders only occur between the start and end hours.")
+                ) {
+                    Toggle("Mute Notifications", isOn: $muteNotifications)
                     Picker("Start", selection: $startHour) {
                         ForEach(0..<24, id: \.self) { h in
                             Text(hourLabel(h)).tag(h)
@@ -659,33 +680,29 @@ private struct NotificationSettingsView: View {
                             Text(hourLabel(h)).tag(h)
                         }
                     }
-                    Text("Notifications will occur only between the start and end hours.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section(header: Text("Reminder Frequency")) {
-                    Picker("Every", selection: $intervalMinutes) {
+                    Picker("Frequency", selection: $intervalMinutes) {
                         ForEach(reminderChoices, id: \.self) { value in
                             Text(intervalLabel(value)).tag(value)
                         }
                     }
-                }
-
-                Section(header: Text("Notification Sound")) {
-                    Picker("", selection: $selectedSound) {
+                    Picker("Sound", selection: $selectedSound) {
                         // Explicit none option (empty string means no sound)
                         Text("None").tag("")
                         ForEach(availableSoundsBaseNames(), id: \.self) { name in
                             Text(name).tag(name)
                         }
                     }
-                    Toggle("Mute Add Water Sound", isOn: $muteTapSound)
-                    Toggle("Mute Notifications", isOn: $muteNotifications)
+                }
+
+                Section {
+                    Button(role: .destructive) {
+                        onResetToday()
+                    } label: {
+                        Text("Reset today's intake")
+                    }
+                } footer: {
                     HStack {
                         Text("App Version \(versionLabel)")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
                         Spacer()
                         Button {
                             dismiss()
@@ -697,19 +714,12 @@ private struct NotificationSettingsView: View {
                                 .labelStyle(.titleAndIcon)
                         }
                         .buttonStyle(.bordered)
+                        .textCase(nil)
                     }
-                    .listRowBackground(Color.clear)
+                    .padding(.top, 8)
                 }
-
-                Section {
-                    Button(role: .destructive) {
-                        onResetToday()
-                    } label: {
-                        Text("Reset today's intake")
-                    }
-                }
-
             }
+            .listSectionSpacing(.compact)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

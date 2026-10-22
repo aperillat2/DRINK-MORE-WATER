@@ -104,6 +104,109 @@ struct NotificationSchedulerTests {
         let times = tomorrow.compactMap { timeComponents(from: $0) }
         #expect(formattedTimes(times) == ["07:00", "08:00", "09:00"])
     }
+
+    @Test("never schedules more than the iOS limit, keeping the earliest reminders")
+    func capsAtPendingLimit() throws {
+        // Every 15 minutes from 7 AM to 8 PM is 53 reminders a day, so two days would be 106.
+        let nowDate = date("2000-01-01T06:00:00Z")
+        let fakeCenter = FakeUserNotificationCenter()
+        let scheduler = makeScheduler(center: fakeCenter, now: nowDate)
+
+        scheduler.scheduleForTodayAndTomorrow(startHour: 7, endHour: 20, intervalMinutes: 15, soundFile: "sound", lastDrinkDate: nil)
+
+        let scheduled = try #require(fakeCenter.requests)
+        #expect(scheduled.count == NotificationScheduler.maxPendingNotifications)
+
+        let dates = scheduled.compactMap { triggerDate(from: $0) }
+        #expect(dates.count == scheduled.count)
+        #expect(dates == dates.sorted(), "Requests should be added earliest first")
+        #expect(scheduled.filter { $0.identifier.hasPrefix("today_") }.count == 53)
+        #expect(dates.first == date("2000-01-01T07:00:00Z"))
+    }
+
+    @Test("schedules reminders for the coming week, not just tomorrow")
+    func schedulesFutureDays() throws {
+        // After today's window has closed: nothing today, then 3 reminders a day for 7 days.
+        let nowDate = date("2000-01-01T12:00:00Z")
+        let fakeCenter = FakeUserNotificationCenter()
+        let scheduler = makeScheduler(center: fakeCenter, now: nowDate)
+
+        scheduler.scheduleForTodayAndTomorrow(startHour: 7, endHour: 9, intervalMinutes: 60, soundFile: "sound", lastDrinkDate: nil)
+
+        let scheduled = try #require(fakeCenter.requests)
+        #expect(scheduled.filter { $0.identifier.hasPrefix("today_") }.isEmpty)
+        #expect(scheduled.count == 3 * NotificationScheduler.futureDaysToSchedule)
+
+        let dates = scheduled.compactMap { triggerDate(from: $0) }
+        #expect(dates.first == date("2000-01-02T07:00:00Z"))
+        #expect(dates.last == date("2000-01-08T09:00:00Z"))
+        #expect(Set(scheduled.map(\.identifier)).count == scheduled.count, "Identifiers must be unique")
+    }
+
+    @Test("scheduleForTomorrow also covers the following days")
+    func scheduleForTomorrowCoversFutureDays() throws {
+        let nowDate = date("2000-01-01T12:00:00Z")
+        let fakeCenter = FakeUserNotificationCenter()
+        let scheduler = makeScheduler(center: fakeCenter, now: nowDate)
+
+        scheduler.scheduleForTomorrow(startHour: 7, endHour: 9, intervalMinutes: 60, soundFile: "sound")
+
+        let scheduled = try #require(fakeCenter.requests)
+        #expect(scheduled.count == 3 * NotificationScheduler.futureDaysToSchedule)
+        #expect(triggerDate(from: scheduled[0]) == date("2000-01-02T07:00:00Z"))
+    }
+
+    @Test("once-a-day mode keeps the same time on later days")
+    func dailyModeRepeatsTomorrowsTime() throws {
+        let nowDate = date("2000-01-01T10:00:00Z")
+        let lastDrink = date("2000-01-01T08:15:00Z")
+        let fakeCenter = FakeUserNotificationCenter()
+        let scheduler = makeScheduler(center: fakeCenter, now: nowDate)
+
+        scheduler.scheduleForTodayAndTomorrow(startHour: 7, endHour: 21, intervalMinutes: 0, soundFile: "sound", lastDrinkDate: lastDrink)
+
+        let scheduled = try #require(fakeCenter.requests)
+        #expect(scheduled.count == NotificationScheduler.futureDaysToSchedule)
+        let times = scheduled.compactMap { timeComponents(from: $0) }
+        #expect(Set(formattedTimes(times)) == ["08:15"])
+    }
+
+    @Test("every reminder sets the badge to 1 instead of a running count")
+    func badgeIsAlwaysOne() throws {
+        let nowDate = date("2000-01-01T06:00:00Z")
+        let fakeCenter = FakeUserNotificationCenter()
+        let scheduler = makeScheduler(center: fakeCenter, now: nowDate)
+
+        scheduler.scheduleForTodayAndTomorrow(startHour: 7, endHour: 20, intervalMinutes: 60, soundFile: "sound", lastDrinkDate: nil)
+
+        let scheduled = try #require(fakeCenter.requests)
+        #expect(scheduled.allSatisfy { $0.content.badge == 1 })
+    }
+
+    @Test("clearBadge resets the badge but keeps scheduled reminders")
+    func clearBadgeKeepsReminders() throws {
+        let nowDate = date("2000-01-01T06:00:00Z")
+        let fakeCenter = FakeUserNotificationCenter()
+        let scheduler = makeScheduler(center: fakeCenter, now: nowDate)
+
+        scheduler.scheduleForTodayAndTomorrow(startHour: 7, endHour: 9, intervalMinutes: 60, soundFile: "sound", lastDrinkDate: nil)
+        let countBefore = try #require(fakeCenter.requests).count
+        let badgeResetsBefore = fakeCenter.badgeResetCount
+
+        scheduler.clearBadge()
+
+        #expect(fakeCenter.badgeResetCount == badgeResetsBefore + 1)
+        #expect(fakeCenter.requests?.count == countBefore)
+    }
+
+    private func makeScheduler(center: FakeUserNotificationCenter, now nowDate: Date) -> NotificationScheduler {
+        NotificationScheduler(centerProvider: { center }, calendar: calendar, now: { nowDate })
+    }
+
+    private func triggerDate(from request: UNNotificationRequest) -> Date? {
+        guard let trigger = request.trigger as? UNCalendarNotificationTrigger else { return nil }
+        return calendar.date(from: trigger.dateComponents)
+    }
 }
 
 private final class FakeUserNotificationCenter: UserNotificationCentering {
