@@ -322,6 +322,9 @@ private extension WaterGlassView {
                             .frame(width: glassSize.width, height: aboveAligned)
                             .offset(y: WaterGlassMetrics.glassVerticalNudge + WaterGlassMetrics.textOffset.height - glassSize.height/2 + aboveAligned/2)
                     )
+                    // Clip to the glass too, like the other layers. Without this, the text layer's
+                    // faint edges showed as a rectangle extending past the sides of the glass.
+                    .mask(glassMask())
                     .transaction { $0.animation = nil }
                     .animation(nil, value: aboveAligned)
                     .animation(nil, value: fraction)
@@ -342,6 +345,7 @@ private extension WaterGlassView {
                                 .frame(width: glassSize.width, height: aboveAligned)
                                 .offset(y: WaterGlassMetrics.glassVerticalNudge + WaterGlassMetrics.textOffset.height - glassSize.height/2 + aboveAligned/2)
                         )
+                        .mask(glassMask())
                         .transaction { $0.animation = nil }
                         .animation(nil, value: aboveAligned)
                         .accessibilityHidden(true)
