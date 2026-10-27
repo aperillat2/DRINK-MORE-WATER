@@ -34,23 +34,28 @@ struct DRINK_MORE_WATERApp: App {
         SharedStore.migrateFromStandardDefaultsIfNeeded()
     }
 
+    /// Cross-fade from the splash photo to the main screen.
+    private static let splashFade = Animation.easeInOut(duration: 0.6)
+
     var body: some Scene {
         WindowGroup {
             ZStack {
                 if showSplash {
+                    // Kept on top so the light photo fades out over the blue main screen.
                     SplashView()
+                        .zIndex(1)
                 } else {
                     ContentView()
                 }
             }
-            .animation(.easeInOut(duration: 0.1), value: showSplash)
+            .animation(Self.splashFade, value: showSplash)
             .onAppear {
                 if shouldSkipSplash { showSplash = false }
             }
             .task {
                 guard showSplash && !shouldSkipSplash else { return }
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
-                withAnimation {
+                withAnimation(Self.splashFade) {
                     showSplash = false
                 }
             }

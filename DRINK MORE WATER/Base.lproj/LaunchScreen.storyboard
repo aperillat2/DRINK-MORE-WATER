@@ -3,7 +3,6 @@
     <device id="retina6_9" orientation="portrait" appearance="light"/>
     <dependencies>
         <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="24063"/>
-        <capability name="System colors in document resources" minToolsVersion="11.0"/>
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
     <scenes>
@@ -18,16 +17,16 @@
                     <view key="view" contentMode="scaleToFill" id="RootView">
                         <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <subviews>
-                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" image="drink_more_water" translatesAutoresizingMaskIntoConstraints="NO" id="GlassImage">
-                                <rect key="frame" x="-68.5" y="87" width="551" height="722"/>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFill" image="splash_photo" translatesAutoresizingMaskIntoConstraints="NO" id="SplashImage">
+                                <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                             </imageView>
                         </subviews>
-                        <color key="backgroundColor" systemColor="systemBlueColor"/>
+                        <color key="backgroundColor" red="0.85882352941176465" green="0.92549019607843142" blue="0.94901960784313721" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
-                            <constraint firstItem="GlassImage" firstAttribute="centerX" secondItem="RootView" secondAttribute="centerX" id="CenterX"/>
-                            <constraint firstItem="GlassImage" firstAttribute="centerY" secondItem="RootView" secondAttribute="centerY" id="CenterY"/>
-                            <constraint firstItem="GlassImage" firstAttribute="width" constant="551" id="Width"/>
-                            <constraint firstItem="GlassImage" firstAttribute="height" constant="722" id="Height"/>
+                            <constraint firstItem="SplashImage" firstAttribute="top" secondItem="RootView" secondAttribute="top" id="Top-Edge"/>
+                            <constraint firstItem="SplashImage" firstAttribute="bottom" secondItem="RootView" secondAttribute="bottom" id="Bottom-Edge"/>
+                            <constraint firstItem="SplashImage" firstAttribute="leading" secondItem="RootView" secondAttribute="leading" id="Leading-Edge"/>
+                            <constraint firstItem="SplashImage" firstAttribute="trailing" secondItem="RootView" secondAttribute="trailing" id="Trailing-Edge"/>
                         </constraints>
                     </view>
                 </viewController>
@@ -37,9 +36,6 @@
         </scene>
     </scenes>
     <resources>
-        <image name="drink_more_water" width="1024" height="1024"/>
-        <systemColor name="systemBlueColor">
-            <color red="0.0" green="0.4784313725" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
-        </systemColor>
+        <image name="splash_photo" width="1024" height="1536"/>
     </resources>
 </document>
