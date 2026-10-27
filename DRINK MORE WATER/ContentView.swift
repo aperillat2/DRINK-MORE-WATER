@@ -24,7 +24,6 @@ struct ContentView: View {
 
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var showResetConfirmation: Bool = false
     @State private var showOzPerTapPicker: Bool = false
 
     // Notification settings (persisted)
@@ -140,13 +139,6 @@ struct ContentView: View {
             .padding(.trailing, 24)
             .padding(.top, 12)
         }
-        .alert("Reset today's intake?", isPresented: $showResetConfirmation) {
-            Button("Cancel", role: .cancel) {}
-            Button("Reset", role: .destructive) {
-                viewModel.resetToday()
-                refreshNotifications()
-            }
-        } message: { Text("This will set today's filled amount back to 0 \(viewModel.unit.label).") }
         .sheet(isPresented: $showNotificationSettings) {
             NotificationSettingsView(
                 startHour: $notifStartHour,
@@ -161,8 +153,10 @@ struct ContentView: View {
                 ),
                 notificationsDenied: notificationsDenied,
                 onApply: refreshNotifications,
+                // Settings shows its own confirmation, then calls this.
                 onResetToday: {
-                    showResetConfirmation = true
+                    viewModel.resetToday()
+                    refreshNotifications()
                 },
                 onShowHelp: {
                     walkthroughStep = 1

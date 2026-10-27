@@ -12,11 +12,15 @@ struct NotificationSettingsView: View {
     /// True when the user has turned notifications off for this app in iOS Settings.
     var notificationsDenied: Bool = false
     var onApply: () -> Void
+    /// Called after the user confirms the reset.
     var onResetToday: () -> Void
     var onShowHelp: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    /// The confirmation is presented from this sheet: on iOS 17 an alert attached to the
+    /// view underneath an open sheet never appears.
+    @State private var showResetConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -70,7 +74,7 @@ struct NotificationSettingsView: View {
 
                 Section {
                     Button(role: .destructive) {
-                        onResetToday()
+                        showResetConfirmation = true
                     } label: {
                         Text("Reset today's intake")
                     }
@@ -108,6 +112,12 @@ struct NotificationSettingsView: View {
         .onChange(of: startHour) { _, newStart in
             // Keep the window valid if Start moves past End.
             if endHour < newStart { endHour = newStart }
+        }
+        .alert("Reset today's intake?", isPresented: $showResetConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Reset", role: .destructive) { onResetToday() }
+        } message: {
+            Text("This will set today's filled amount back to 0 \(volumeUnit.label).")
         }
         .dynamicTypeSize(.large ... .accessibility1)
     }
