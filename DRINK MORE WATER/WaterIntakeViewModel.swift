@@ -5,7 +5,7 @@ import Observation
 @Observable
 final class WaterIntakeViewModel {
     /// UserDefaults keys. Shared with the UI-test reset in `DRINK_MORE_WATERApp`.
-    enum Keys {
+    nonisolated enum Keys {
         static let intake = "intakeOz"
         static let lastIntakeDate = "lastIntakeDate"
         static let dailyGoal = "dailyGoalOz"
@@ -63,10 +63,16 @@ final class WaterIntakeViewModel {
         }
     }
 
-    init(defaults: UserDefaults = .standard, now: @escaping () -> Date = Date.init, calendar: Calendar = .current) {
+    init(defaults: UserDefaults = SharedStore.defaults, now: @escaping () -> Date = Date.init, calendar: Calendar = .current) {
         self.defaults = defaults
         self.now = now
         self.calendar = calendar
+        reload()
+    }
+
+    /// Re-reads everything from storage. Call when the app returns to the foreground,
+    /// since the widget's "Add water" button may have changed the stored values meanwhile.
+    func reload() {
         // Unit must be set first so the per-tap clamp uses the right range.
         unit = VolumeUnit(rawValue: defaults.string(forKey: Keys.unit) ?? "") ?? .oz
         intakeOz = defaults.integer(forKey: Keys.intake)
@@ -74,9 +80,8 @@ final class WaterIntakeViewModel {
         dailyGoalOz = defaults.object(forKey: Keys.dailyGoal) as? Int ?? 80
         goalMetDateString = defaults.string(forKey: Keys.goalMetDate) ?? ""
         ozPerTap = defaults.object(forKey: Keys.perTap) as? Int ?? 10
-        if let timestamp = defaults.object(forKey: Keys.lastDrinkTimestamp) as? Double {
-            lastDrinkDate = Date(timeIntervalSince1970: timestamp)
-        }
+        lastDrinkDate = (defaults.object(forKey: Keys.lastDrinkTimestamp) as? Double)
+            .map { Date(timeIntervalSince1970: $0) }
     }
 
     private var todayString: String {

@@ -69,6 +69,26 @@ nonisolated struct ReminderSettings: Equatable {
     var soundFile: String
     var muted: Bool
 
+    /// Storage keys (also used by the app's `@AppStorage` properties).
+    enum Keys {
+        static let startHour = "notifStartHour"
+        static let endHour = "notifEndHour"
+        static let soundFile = "notifSoundFile"
+        static let intervalMinutes = "notifIntervalMinutes"
+        static let muted = "muteNotifications"
+    }
+
+    /// Defaults match the app's `@AppStorage` defaults in `ContentView`.
+    static func load(from defaults: UserDefaults = SharedStore.defaults) -> ReminderSettings {
+        ReminderSettings(
+            startHour: defaults.object(forKey: Keys.startHour) as? Int ?? 7,
+            endHour: defaults.object(forKey: Keys.endHour) as? Int ?? 20,
+            intervalMinutes: defaults.object(forKey: Keys.intervalMinutes) as? Int ?? 60,
+            soundFile: defaults.string(forKey: Keys.soundFile) ?? "drink more water",
+            muted: defaults.bool(forKey: Keys.muted)
+        )
+    }
+
     /// One serial queue for all scheduling work: it keeps the work off the main thread,
     /// and guarantees that when several reschedules are requested in quick succession
     /// (e.g. rapid taps), they run one at a time in order, so the latest one always wins.
@@ -79,9 +99,13 @@ nonisolated struct ReminderSettings: Equatable {
     /// - Parameters:
     ///   - goalMetToday: when true, today's remaining reminders are skipped.
     ///   - lastDrinkDate: today's last drink, used to time the next reminder.
-    func apply(to scheduler: NotificationScheduling, goalMetToday: Bool, lastDrinkDate: Date?) {
+    ///   - waitUntilDone: block until scheduling finishes. The widget extension uses this,
+    ///     because the system may suspend it as soon as its intent returns. Never pass `true`
+    ///     from the main thread.
+    func apply(to scheduler: NotificationScheduling, goalMetToday: Bool, lastDrinkDate: Date?,
+               waitUntilDone: Bool = false) {
         let settings = self
-        Self.queue.async {
+        let work: @Sendable () -> Void = {
             if settings.muted {
                 scheduler.cancelAll()
             } else if goalMetToday {
@@ -100,6 +124,11 @@ nonisolated struct ReminderSettings: Equatable {
                     lastDrinkDate: lastDrinkDate
                 )
             }
+        }
+        if waitUntilDone {
+            Self.queue.sync(execute: work)
+        } else {
+            Self.queue.async(execute: work)
         }
     }
 }
@@ -347,7 +376,11 @@ nonisolated private extension NotificationScheduler {
         if let name = resolveSoundFilename(baseName: soundFile) {
             return UNNotificationSound(named: UNNotificationSoundName(name))
         }
-        return .default
+        // Not found in this bundle — e.g. when scheduling from the widget extension, whose
+        // bundle doesn't contain the app's sounds. The system resolves the name against the
+        // app at delivery time (and plays the default sound if it's missing); all bundled
+        // sounds are .caf.
+        return UNNotificationSound(named: UNNotificationSoundName("\(soundFile).caf"))
     }
 
     func resolveSoundFilename(baseName: String) -> String? {

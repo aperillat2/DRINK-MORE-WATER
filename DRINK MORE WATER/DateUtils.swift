@@ -1,6 +1,6 @@
 import Foundation
 
-enum DateUtils {
+nonisolated enum DateUtils {
     static let dayFormatter: DateFormatter = makeDayFormatter(calendar: .current)
 
     static func todayString() -> String {

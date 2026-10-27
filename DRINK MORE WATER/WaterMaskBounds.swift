@@ -9,4 +9,10 @@ public struct WaterMaskBounds {
         self.emptyFraction = emptyFraction
         self.fullFraction = fullFraction
     }
+
+    /// Calibrated for the `glass_mask` artwork (shared by the app and the widget).
+    public static let glass = WaterMaskBounds(
+        emptyFraction: 1.0 - 0.8799630655586334,
+        fullFraction: 1.0 - 0.198522622345337
+    )
 }

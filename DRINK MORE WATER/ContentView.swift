@@ -8,11 +8,13 @@
 import SwiftUI
 import CoreGraphics
 import UserNotifications
+import WidgetKit
 
 struct ContentView: View {
     // Walkthrough state
-    @AppStorage("hasCompletedWalkthrough") private var hasCompletedWalkthrough: Bool = false
-    @AppStorage("hasLaunchedBefore") private var hasLaunchedBefore: Bool = false
+    // All persisted settings live in the shared App Group store so the widget can read them.
+    @AppStorage("hasCompletedWalkthrough", store: SharedStore.defaults) private var hasCompletedWalkthrough: Bool = false
+    @AppStorage("hasLaunchedBefore", store: SharedStore.defaults) private var hasLaunchedBefore: Bool = false
     @State private var showWalkthroughPrompt: Bool = false
     @State private var walkthroughStep: Int? = nil // nil = not showing, 1..3 = steps
 
@@ -26,19 +28,16 @@ struct ContentView: View {
     @State private var showOzPerTapPicker: Bool = false
 
     // Notification settings (persisted)
-    @AppStorage("notifStartHour") private var notifStartHour: Int = 7    // 7 AM
-    @AppStorage("notifEndHour") private var notifEndHour: Int = 20       // 8 PM
-    @AppStorage("notifSoundFile") private var notifSoundFile: String = "drink more water"
-    @AppStorage("notifIntervalMinutes") private var notifIntervalMinutes: Int = 60
-    @AppStorage("muteNotifications") private var muteNotifications: Bool = false
+    // Defaults must match `ReminderSettings.load(from:)`, which the widget uses.
+    @AppStorage(ReminderSettings.Keys.startHour, store: SharedStore.defaults) private var notifStartHour: Int = 7    // 7 AM
+    @AppStorage(ReminderSettings.Keys.endHour, store: SharedStore.defaults) private var notifEndHour: Int = 20       // 8 PM
+    @AppStorage(ReminderSettings.Keys.soundFile, store: SharedStore.defaults) private var notifSoundFile: String = "drink more water"
+    @AppStorage(ReminderSettings.Keys.intervalMinutes, store: SharedStore.defaults) private var notifIntervalMinutes: Int = 60
+    @AppStorage(ReminderSettings.Keys.muted, store: SharedStore.defaults) private var muteNotifications: Bool = false
     @State private var showNotificationSettings: Bool = false
-    @AppStorage("muteTapSound") private var muteTapSound: Bool = false
+    @AppStorage("muteTapSound", store: SharedStore.defaults) private var muteTapSound: Bool = false
     /// True when notifications are turned off for the app in iOS Settings.
     @State private var notificationsDenied: Bool = false
-
-    // Mask calibration (mask space: 1 = top, 0 = bottom)
-    private let calibratedFullFraction: CGFloat = 1.0 - 0.198522622345337
-    private let calibratedEmptyFraction: CGFloat = 1.0 - 0.8799630655586334
 
     // Wave engine
     @State private var frozenPhase: Double? = nil
@@ -200,6 +199,8 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 frozenPhase = nil
+                // Water may have been added from the widget while the app was in the background.
+                viewModel.reload()
                 viewModel.resetIfNeeded()
                 // The user has seen the app, so the reminder badge is no longer needed.
                 notificationScheduler.clearBadge()
@@ -208,6 +209,8 @@ struct ContentView: View {
             } else {
                 let t = Date.timeIntervalSinceReferenceDate
                 frozenPhase = WaterGlassView.rippleSeed + t * WaterGlassView.waveSpeed
+                // Leaving the app: show the latest intake/goal/units on the Home Screen widgets.
+                if newPhase == .background { WidgetCenter.shared.reloadAllTimelines() }
             }
         }
         .onChange(of: hasCompletedWalkthrough) { _, completed in
@@ -360,9 +363,7 @@ private extension ContentView {
         }
     }
 
-    var maskBounds: WaterMaskBounds {
-        WaterMaskBounds(emptyFraction: calibratedEmptyFraction, fullFraction: calibratedFullFraction)
-    }
+    var maskBounds: WaterMaskBounds { .glass }
 }
 
 // MARK: - Notifications

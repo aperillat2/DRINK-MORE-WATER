@@ -6,7 +6,20 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		70A585FE309041F4001DDD20 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70A585FD309041F4001DDD20 /* WidgetKit.framework */; };
+		70A58600309041F4001DDD20 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70A585FF309041F4001DDD20 /* SwiftUI.framework */; };
+		70A5860B309041F5001DDD20 /* DrinkMoreWaterWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 70A585FB309041F4001DDD20 /* DrinkMoreWaterWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
+		70A58609309041F5001DDD20 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 70B02DCB2EA94941002696A3 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 70A585FA309041F4001DDD20;
+			remoteInfo = DrinkMoreWaterWidgetExtension;
+		};
 		70B02DE32EA94943002696A3 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 70B02DCB2EA94941002696A3 /* Project object */;
@@ -23,15 +36,68 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		70A5860C309041F5001DDD20 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				70A5860B309041F5001DDD20 /* DrinkMoreWaterWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		70A585FB309041F4001DDD20 /* DrinkMoreWaterWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DrinkMoreWaterWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		70A585FD309041F4001DDD20 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = /System/Library/Frameworks/WidgetKit.framework; sourceTree = "<absolute>"; };
+		70A585FF309041F4001DDD20 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = /System/Library/Frameworks/SwiftUI.framework; sourceTree = "<absolute>"; };
+		70A5861130904222001DDD20 /* DrinkMoreWaterWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DrinkMoreWaterWidgetExtension.entitlements; sourceTree = "<group>"; };
 		70B02DD32EA94941002696A3 /* DRINK MORE WATER.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "DRINK MORE WATER.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		70B02DE22EA94943002696A3 /* DRINK MORE WATERTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "DRINK MORE WATERTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		70B02DEC2EA94943002696A3 /* DRINK MORE WATERUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "DRINK MORE WATERUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		70A5860F309041F5001DDD20 /* Exceptions for "DrinkMoreWaterWidget" folder in "DrinkMoreWaterWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 70A585FA309041F4001DDD20 /* DrinkMoreWaterWidgetExtension */;
+		};
+		70A5862130904465001DDD20 /* Exceptions for "DRINK MORE WATER" folder in "DrinkMoreWaterWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AddWaterIntent.swift,
+				DateUtils.swift,
+				FillFractionCalculator.swift,
+				NotificationScheduler.swift,
+				SharedStore.swift,
+				VolumeUnit.swift,
+				WaterIntakeViewModel.swift,
+				WaterMaskBounds.swift,
+			);
+			target = 70A585FA309041F4001DDD20 /* DrinkMoreWaterWidgetExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		70A58601309041F4001DDD20 /* DrinkMoreWaterWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				70A5860F309041F5001DDD20 /* Exceptions for "DrinkMoreWaterWidget" folder in "DrinkMoreWaterWidgetExtension" target */,
+			);
+			path = DrinkMoreWaterWidget;
+			sourceTree = "<group>";
+		};
 		70B02DD52EA94941002696A3 /* DRINK MORE WATER */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				70A5862130904465001DDD20 /* Exceptions for "DRINK MORE WATER" folder in "DrinkMoreWaterWidgetExtension" target */,
+			);
 			path = "DRINK MORE WATER";
 			sourceTree = "<group>";
 		};
@@ -48,6 +114,15 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		70A585F8309041F4001DDD20 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				70A58600309041F4001DDD20 /* SwiftUI.framework in Frameworks */,
+				70A585FE309041F4001DDD20 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		70B02DD02EA94941002696A3 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -72,12 +147,24 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		70A585FC309041F4001DDD20 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				70A585FD309041F4001DDD20 /* WidgetKit.framework */,
+				70A585FF309041F4001DDD20 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		70B02DCA2EA94941002696A3 = {
 			isa = PBXGroup;
 			children = (
+				70A5861130904222001DDD20 /* DrinkMoreWaterWidgetExtension.entitlements */,
 				70B02DD52EA94941002696A3 /* DRINK MORE WATER */,
 				70B02DE52EA94943002696A3 /* DRINK MORE WATERTests */,
 				70B02DEF2EA94943002696A3 /* DRINK MORE WATERUITests */,
+				70A58601309041F4001DDD20 /* DrinkMoreWaterWidget */,
+				70A585FC309041F4001DDD20 /* Frameworks */,
 				70B02DD42EA94941002696A3 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -88,6 +175,7 @@
 				70B02DD32EA94941002696A3 /* DRINK MORE WATER.app */,
 				70B02DE22EA94943002696A3 /* DRINK MORE WATERTests.xctest */,
 				70B02DEC2EA94943002696A3 /* DRINK MORE WATERUITests.xctest */,
+				70A585FB309041F4001DDD20 /* DrinkMoreWaterWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,6 +183,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		70A585FA309041F4001DDD20 /* DrinkMoreWaterWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 70A58610309041F5001DDD20 /* Build configuration list for PBXNativeTarget "DrinkMoreWaterWidgetExtension" */;
+			buildPhases = (
+				70A585F7309041F4001DDD20 /* Sources */,
+				70A585F8309041F4001DDD20 /* Frameworks */,
+				70A585F9309041F4001DDD20 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				70A58601309041F4001DDD20 /* DrinkMoreWaterWidget */,
+			);
+			name = DrinkMoreWaterWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = DrinkMoreWaterWidgetExtension;
+			productReference = 70A585FB309041F4001DDD20 /* DrinkMoreWaterWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		70B02DD22EA94941002696A3 /* DRINK MORE WATER */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 70B02DF62EA94943002696A3 /* Build configuration list for PBXNativeTarget "DRINK MORE WATER" */;
@@ -102,10 +212,12 @@
 				70B02DCF2EA94941002696A3 /* Sources */,
 				70B02DD02EA94941002696A3 /* Frameworks */,
 				70B02DD12EA94941002696A3 /* Resources */,
+				70A5860C309041F5001DDD20 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				70A5860A309041F5001DDD20 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				70B02DD52EA94941002696A3 /* DRINK MORE WATER */,
@@ -170,9 +282,12 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2600;
+				LastSwiftUpdateCheck = 2710;
 				LastUpgradeCheck = 2610;
 				TargetAttributes = {
+					70A585FA309041F4001DDD20 = {
+						CreatedOnToolsVersion = 27.1;
+					};
 					70B02DD22EA94941002696A3 = {
 						CreatedOnToolsVersion = 26.0.1;
 					};
@@ -203,11 +318,19 @@
 				70B02DD22EA94941002696A3 /* DRINK MORE WATER */,
 				70B02DE12EA94943002696A3 /* DRINK MORE WATERTests */,
 				70B02DEB2EA94943002696A3 /* DRINK MORE WATERUITests */,
+				70A585FA309041F4001DDD20 /* DrinkMoreWaterWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		70A585F9309041F4001DDD20 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		70B02DD12EA94941002696A3 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -232,6 +355,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		70A585F7309041F4001DDD20 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		70B02DCF2EA94941002696A3 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -256,6 +386,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		70A5860A309041F5001DDD20 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 70A585FA309041F4001DDD20 /* DrinkMoreWaterWidgetExtension */;
+			targetProxy = 70A58609309041F5001DDD20 /* PBXContainerItemProxy */;
+		};
 		70B02DE42EA94943002696A3 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 70B02DD22EA94941002696A3 /* DRINK MORE WATER */;
@@ -269,6 +404,92 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		70A5860D309041F5001DDD20 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = DrinkMoreWaterWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = NH9335MFR8;
+				ENABLE_APP_SANDBOX = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = DrinkMoreWaterWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = DrinkMoreWaterWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.6;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dreampuddle.drinkmorewater.DrinkMoreWaterWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				XROS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Debug;
+		};
+		70A5860E309041F5001DDD20 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = DrinkMoreWaterWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = NH9335MFR8;
+				ENABLE_APP_SANDBOX = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = DrinkMoreWaterWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = DrinkMoreWaterWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.6;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dreampuddle.drinkmorewater.DrinkMoreWaterWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				XROS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Release;
+		};
 		70B02DF42EA94943002696A3 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -397,8 +618,9 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "DRINK MORE WATER/DRINK MORE WATER.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = NH9335MFR8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -416,9 +638,10 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.dreampuddle.drinkmorewater;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -438,8 +661,9 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "DRINK MORE WATER/DRINK MORE WATER.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = NH9335MFR8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -457,9 +681,10 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.dreampuddle.drinkmorewater;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -577,6 +802,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		70A58610309041F5001DDD20 /* Build configuration list for PBXNativeTarget "DrinkMoreWaterWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				70A5860D309041F5001DDD20 /* Debug */,
+				70A5860E309041F5001DDD20 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		70B02DCE2EA94941002696A3 /* Build configuration list for PBXProject "DRINK MORE WATER" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

@@ -18,15 +18,17 @@ struct DRINK_MORE_WATERApp: App {
         if ProcessInfo.processInfo.arguments.contains("-UITestsResetState") {
             // Wipe every saved value (intake, goal, per-tap, unit, settings...) so UI tests
             // always start from factory defaults, whatever was changed in the simulator.
-            let defaults = UserDefaults.standard
             if let bundleID = Bundle.main.bundleIdentifier {
-                defaults.removePersistentDomain(forName: bundleID)
+                UserDefaults.standard.removePersistentDomain(forName: bundleID)
             }
+            SharedStore.defaults.removePersistentDomain(forName: SharedStore.appGroupID)
             // Skip the first-launch "Welcome" walkthrough prompt, which would block taps.
-            defaults.set(true, forKey: "hasLaunchedBefore")
-            defaults.set(true, forKey: "hasCompletedWalkthrough")
+            SharedStore.defaults.set(true, forKey: "hasLaunchedBefore")
+            SharedStore.defaults.set(true, forKey: "hasCompletedWalkthrough")
         }
         #endif
+        // Data moved to the shared App Group store (for the widget) in 1.6; bring 1.5 data along.
+        SharedStore.migrateFromStandardDefaultsIfNeeded()
     }
 
     var body: some Scene {

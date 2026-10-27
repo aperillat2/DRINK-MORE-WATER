@@ -80,30 +80,6 @@ final class DRINK_MORE_WATERUITests: XCTestCase {
     }
 }
 
-// TEMP: captures glass artwork for App Store creative assets.
-extension DRINK_MORE_WATERUITests {
-    @MainActor
-    func testCaptureGlassStates() throws {
-        func snap(_ name: String) {
-            let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-            attachment.name = name
-            attachment.lifetime = .keepAlways
-            add(attachment)
-        }
-        let app = launchFreshApp()
-        let glass = app.descendants(matching: .any)["waterGlass"]
-        XCTAssertTrue(glass.waitForExistence(timeout: 5))
-        sleep(2)
-        snap("glass-0")
-        for _ in 1...4 { glass.tap() }
-        sleep(3)
-        snap("glass-1")
-        for _ in 1...4 { glass.tap() }
-        sleep(3)
-        snap("glass-2")
-    }
-}
-
 private extension DRINK_MORE_WATERUITests {
     /// Launches with all saved state wiped and the splash/walkthrough skipped.
     func launchFreshApp() -> XCUIApplication {

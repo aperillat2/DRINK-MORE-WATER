@@ -1,7 +1,7 @@
 import Foundation
 
 /// Unit used to display and enter water amounts.
-enum VolumeUnit: String, CaseIterable, Identifiable {
+nonisolated enum VolumeUnit: String, CaseIterable, Identifiable, Sendable {
     case oz
     case ml
 
