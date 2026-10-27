@@ -2,6 +2,9 @@ import SwiftUI
 
 @main
 struct DRINK_MORE_WATERApp: App {
+    /// Handles the "Log a drink" button on reminder notifications.
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     // UI-test launch flags only exist in Debug builds, so they can never affect the App Store build.
     private var shouldSkipSplash: Bool {
         #if DEBUG

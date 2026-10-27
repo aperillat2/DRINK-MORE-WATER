@@ -183,6 +183,19 @@ struct NotificationSchedulerTests {
         #expect(scheduled.allSatisfy { $0.content.badge == 1 })
     }
 
+    @Test("every reminder has the \"Log a drink\" button category")
+    func remindersHaveLogDrinkCategory() throws {
+        let nowDate = date("2000-01-01T06:00:00Z")
+        let fakeCenter = FakeUserNotificationCenter()
+        let scheduler = makeScheduler(center: fakeCenter, now: nowDate)
+
+        scheduler.scheduleForTodayAndTomorrow(startHour: 7, endHour: 9, intervalMinutes: 60, soundFile: "sound", lastDrinkDate: nil)
+        scheduler.scheduleForTomorrow(startHour: 7, endHour: 9, intervalMinutes: 60, soundFile: "sound")
+
+        let scheduled = try #require(fakeCenter.requests)
+        #expect(scheduled.allSatisfy { $0.content.categoryIdentifier == ReminderNotification.categoryID })
+    }
+
     @Test("clearBadge resets the badge but keeps scheduled reminders")
     func clearBadgeKeepsReminders() throws {
         let nowDate = date("2000-01-01T06:00:00Z")

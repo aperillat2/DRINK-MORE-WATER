@@ -203,18 +203,41 @@ private struct AddWaterButton: View {
 
 // MARK: - Lock Screen sizes
 
+/// Lock Screen widgets are tappable on iPhone and iPad: the whole widget adds water,
+/// without unlocking (see `AddWaterIntent.authenticationPolicy`). Once the goal is met,
+/// there's nothing to add, so it's plain content instead of a button.
+private struct LockScreenAddButton<Content: View>: View {
+    let snapshot: WaterSnapshot
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        if snapshot.isGoalMet {
+            content()
+        } else {
+            Button(intent: AddWaterIntent()) {
+                content()
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Adds \(snapshot.perTap) \(snapshot.unit.spokenName)")
+        }
+    }
+}
+
 private struct CircularAccessoryView: View {
     let snapshot: WaterSnapshot
 
     var body: some View {
-        Gauge(value: Double(min(snapshot.intake, snapshot.goal)), in: 0...Double(max(snapshot.goal, 1))) {
-            Image(systemName: "drop.fill")
-        } currentValueLabel: {
-            Text("\(snapshot.intake)")
+        LockScreenAddButton(snapshot: snapshot) {
+            Gauge(value: Double(min(snapshot.intake, snapshot.goal)), in: 0...Double(max(snapshot.goal, 1))) {
+                // "+" says "tap to add"; a checkmark once the goal is met.
+                Image(systemName: snapshot.isGoalMet ? "checkmark" : "plus")
+            } currentValueLabel: {
+                Text("\(snapshot.intake)")
+            }
+            .gaugeStyle(.accessoryCircularCapacity)
+            .accessibilityLabel("Water")
+            .accessibilityValue("\(snapshot.intake) of \(snapshot.goal) \(snapshot.unit.spokenName)")
         }
-        .gaugeStyle(.accessoryCircularCapacity)
-        .accessibilityLabel("Water")
-        .accessibilityValue("\(snapshot.intake) of \(snapshot.goal) \(snapshot.unit.spokenName)")
     }
 }
 
@@ -222,18 +245,26 @@ private struct RectangularAccessoryView: View {
     let snapshot: WaterSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Label("Water", systemImage: "drop.fill")
-                .font(.headline)
-                .widgetAccentable()
-            Text("\(snapshot.intake) / \(snapshot.goal) \(snapshot.unit.label)")
-                .font(.body.weight(.semibold))
-            ProgressView(value: Double(min(snapshot.intake, snapshot.goal)), total: Double(max(snapshot.goal, 1)))
-                .tint(.white)
+        LockScreenAddButton(snapshot: snapshot) {
+            VStack(alignment: .leading, spacing: 2) {
+                Label("Water", systemImage: "drop.fill")
+                    .font(.headline)
+                    .widgetAccentable()
+                HStack(spacing: 4) {
+                    Text("\(snapshot.intake) / \(snapshot.goal) \(snapshot.unit.label)")
+                        .font(.body.weight(.semibold))
+                    Spacer(minLength: 0)
+                    Image(systemName: snapshot.isGoalMet ? "checkmark.circle.fill" : "plus.circle.fill")
+                        .font(.title3)
+                        .widgetAccentable()
+                }
+                ProgressView(value: Double(min(snapshot.intake, snapshot.goal)), total: Double(max(snapshot.goal, 1)))
+                    .tint(.white)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Water, \(snapshot.intake) of \(snapshot.goal) \(snapshot.unit.spokenName)")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Water, \(snapshot.intake) of \(snapshot.goal) \(snapshot.unit.spokenName)")
     }
 }
 

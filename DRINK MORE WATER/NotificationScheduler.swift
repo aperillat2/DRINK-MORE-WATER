@@ -50,6 +50,29 @@ nonisolated struct DefaultUserNotificationCenter: UserNotificationCentering {
     }
 }
 
+/// The reminder notification's "Log a drink" button.
+nonisolated enum ReminderNotification {
+    static let categoryID = "WATER_REMINDER"
+    static let logDrinkActionID = "LOG_DRINK"
+
+    /// Registers the button with iOS. Call at every app launch, before reminders can be delivered.
+    /// No `.foreground` option: the action runs in the background without opening the app,
+    /// and no `.authenticationRequired`: it works from the Lock Screen without unlocking
+    /// (logging a drink is harmless and private).
+    static func registerCategory(on center: UNUserNotificationCenter = .current()) {
+        let logDrink = UNNotificationAction(
+            identifier: logDrinkActionID,
+            title: String(localized: "Log a drink"),
+            options: [],
+            icon: UNNotificationActionIcon(systemImageName: "drop.fill")
+        )
+        let category = UNNotificationCategory(
+            identifier: categoryID, actions: [logDrink], intentIdentifiers: [], options: []
+        )
+        center.setNotificationCategories([category])
+    }
+}
+
 private struct NotificationSchedulerKey: EnvironmentKey {
     static let defaultValue: NotificationScheduling = NotificationScheduler.shared
 }
@@ -359,6 +382,8 @@ nonisolated private extension NotificationScheduler {
                 // A plain "1" means "you have a reminder". A running count would keep climbing
                 // across days because it can't know which earlier reminders were seen.
                 content.badge = 1
+                // Adds the "Log a drink" button (see `ReminderNotification`).
+                content.categoryIdentifier = ReminderNotification.categoryID
 
                 let components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: time)
                 let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
