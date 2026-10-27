@@ -283,7 +283,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2710;
-				LastUpgradeCheck = 2610;
+				LastUpgradeCheck = 2710;
 				TargetAttributes = {
 					70A585FA309041F4001DDD20 = {
 						CreatedOnToolsVersion = 27.1;
@@ -412,6 +412,7 @@
 				CODE_SIGN_ENTITLEMENTS = DrinkMoreWaterWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 7;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = NH9335MFR8;
 				ENABLE_APP_SANDBOX = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -455,6 +456,7 @@
 				CODE_SIGN_ENTITLEMENTS = DrinkMoreWaterWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 7;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = NH9335MFR8;
 				ENABLE_APP_SANDBOX = YES;
 				GENERATE_INFOPLIST_FILE = YES;
