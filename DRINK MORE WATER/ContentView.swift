@@ -19,7 +19,6 @@ struct ContentView: View {
     @State private var walkthroughStep: Int? = nil // nil = not showing, 1..3 = steps
 
     private let haptics = HapticsFactory.default()
-    private let calculator = FillFractionCalculator()
     @State private var viewModel = WaterIntakeViewModel()
 
     @Environment(\.scenePhase) private var scenePhase
@@ -52,14 +51,7 @@ struct ContentView: View {
     }
 
     private var fillFraction: CGFloat {
-        // A met goal always shows a full glass.
-        if goalMet { return maskBounds.fullFraction }
-        return calculator.fraction(
-            intakeOz: CGFloat(viewModel.intakeOz),
-            goalOz: CGFloat(viewModel.dailyGoalOz),
-            bounds: maskBounds,
-            perTapOz: CGFloat(viewModel.ozPerTap)
-        )
+        GlassArt.fillFraction(intake: viewModel.intakeOz, goal: viewModel.dailyGoalOz, perTap: viewModel.ozPerTap)
     }
 
     private var reminderSettings: ReminderSettings {
@@ -367,7 +359,6 @@ private extension ContentView {
             .position(x: rect.midX, y: rect.midY)
     }
 
-    var maskBounds: WaterMaskBounds { .photoGlass }
 }
 
 // MARK: - Notifications

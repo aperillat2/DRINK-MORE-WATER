@@ -223,3 +223,24 @@ save(canvas(load(emptyPath)), "glass_background.jpg", jpeg: true)
 save(water.crop(x: 180, y: 150, w: 537, h: 811).cgImage(), "glass_water.jpg", jpeg: true)
 save(surface.cgImage(), "glass_surface.png", jpeg: false)
 save(words.cgImage(), "glass_words.png", jpeg: false)
+
+// MARK: 5. Widget versions (WidgetKit rejects images over ~620×564 px on the smallest widgets).
+// A crop around the glass, photo rect (160, 100, 580×990), scaled to 560 px tall.
+let widgetCrop = (x: 160, y: 100, w: 580, h: 990)
+let widgetScale: CGFloat = 560.0 / 990.0
+func scaled(_ img: CGImage, _ s: CGFloat) -> CGImage {
+    let ci = CIImage(cgImage: img).applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: s, kCIInputAspectRatioKey: 1.0])
+    let w = Int((CGFloat(img.width) * s).rounded()), h = Int((CGFloat(img.height) * s).rounded())
+    return CIContext(options: [.workingColorSpace: sRGB]).createCGImage(ci, from: CGRect(x: 0, y: 0, width: w, height: h), format: .RGBA8, colorSpace: sRGB)!
+}
+save(scaled(empty.crop(x: widgetCrop.x, y: widgetCrop.y, w: widgetCrop.w, h: widgetCrop.h).cgImage(), widgetScale), "widget_glass_empty.jpg", jpeg: true)
+save(scaled(water.crop(x: widgetCrop.x, y: widgetCrop.y, w: widgetCrop.w, h: widgetCrop.h).cgImage(), widgetScale), "widget_glass_water.jpg", jpeg: true)
+save(scaled(surface.cgImage(), widgetScale), "widget_glass_surface.png", jpeg: false)
+save(scaled(words.cgImage(), widgetScale), "widget_glass_words.png", jpeg: false)
+// The widget's background colour: the average blue around the edge of the crop.
+var edge: [Float] = [0, 0, 0]; var edgeCount: Float = 0
+for y in widgetCrop.y..<(widgetCrop.y + widgetCrop.h) { for x in widgetCrop.x..<(widgetCrop.x + widgetCrop.w) {
+    let inBorder = x < widgetCrop.x + 12 || x >= widgetCrop.x + widgetCrop.w - 12 || y < widgetCrop.y + 12
+    if inBorder { for c in 0..<3 { edge[c] += empty[x, y, c] }; edgeCount += 1 }
+} }
+print("widget background rgb", edge.map { Int(($0 / edgeCount * 255).rounded()) })

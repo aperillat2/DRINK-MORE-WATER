@@ -16,7 +16,7 @@ struct WidgetImageSizeTests {
     static let maxArea = maxWidth * maxHeight
 
     /// Every image asset in the widget extension's asset catalog. Add new ones here.
-    static let widgetImageNames = ["empty_glass", "glass_mask"]
+    static let widgetImageNames = ["widget_glass_empty", "widget_glass_water", "widget_glass_surface", "widget_glass_words"]
 
     static var widgetBundle: Bundle? {
         Bundle.main.builtInPlugInsURL

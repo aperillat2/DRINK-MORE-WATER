@@ -95,8 +95,8 @@ struct WaterWidgetView: View {
 }
 
 enum WidgetStyle {
-    /// Same blue as the app's background (`Color(.systemBlue)` in light mode).
-    static let appBlue = Color(red: 0, green: 136 / 255, blue: 1)
+    /// The blue around the glass in the app's photo, so the glass blends into the widget.
+    static let appBlue = GlassArt.widgetBackground
 }
 
 // MARK: - Home Screen sizes
@@ -270,119 +270,75 @@ private struct RectangularAccessoryView: View {
 
 // MARK: - Glass
 
-/// A still version of the app's glass: the same artwork, filled to today's level.
-/// (Widgets are static snapshots, so there's no live water animation.)
+/// A still version of the app's glass: the same photos, water surface and words, filled to
+/// today's level. (Widgets are static snapshots, so the water doesn't move.)
 struct WidgetGlassView: View {
     let snapshot: WaterSnapshot
 
-    /// The artwork is a 551×722 canvas; the visible glass is roughly 300×550 in the middle.
-    private let canvas = CGSize(width: 551, height: 722)
-    private let visible = CGSize(width: 300, height: 550)
-
-    private var fillFraction: CGFloat {
-        FillFractionCalculator().fraction(
-            intakeOz: CGFloat(snapshot.intake),
-            goalOz: CGFloat(snapshot.goal),
-            bounds: .glass,
-            perTapOz: CGFloat(snapshot.perTap)
-        )
-    }
+    private let crop = GlassArt.widgetCropRect
 
     var body: some View {
         GeometryReader { proxy in
-            let scale = min(proxy.size.width / visible.width, proxy.size.height / visible.height)
-            let size = CGSize(width: canvas.width * scale, height: canvas.height * scale)
-            // Centered, like the app: the square artwork sits in the middle of the 551×722 canvas,
-            // which is what the fill fraction is measured against.
-            let waterY = size.height * (1 - fillFraction)
-            ZStack {
-                // Water body: a rectangle up to the fill level, clipped to the inside of the glass.
-                // Same colors as the app's WaterFillRenderer.
-                LinearGradient(
-                    stops: [
-                        .init(color: Color(red: 0.857, green: 0.922, blue: 0.987).opacity(0.55), location: 0),
-                        .init(color: Color(red: 0.78, green: 0.88, blue: 0.98).opacity(0.34), location: 0.5),
-                        .init(color: Color(red: 0.879, green: 0.946, blue: 0.991).opacity(0.56), location: 1),
-                    ],
-                    startPoint: UnitPoint(x: 0.3, y: 0), endPoint: UnitPoint(x: 0.7, y: 1)
-                )
-                .frame(height: size.height * fillFraction)
-                .frame(width: size.width, height: size.height, alignment: .bottom)
-                .mask(Image("glass_mask").resizable().scaledToFit())
+            let size = proxy.size
+            let scale = min(size.width / crop.width, size.height / crop.height)
+            // The crop fitted and centred in the available space.
+            let transform = PhotoTransform(
+                origin: CGPoint(x: size.width / 2 - crop.midX * scale, y: size.height / 2 - crop.midY * scale),
+                scale: scale
+            )
+            let fraction = GlassArt.fillFraction(intake: snapshot.intake, goal: snapshot.goal, perTap: snapshot.perTap)
+            let hasWater = snapshot.intake > 0 && fraction > 0.001
+            let levelY = GlassArt.levelY(forFraction: fraction)
+            let waterline = hasWater ? transform.waterline(atLevelY: levelY) : .none(below: size.height)
+            let cropRect = transform.rect(crop)
 
-                // Water surface, seen slightly from above (a still version of the app's surface).
-                if snapshot.intake > 0 {
-                    WidgetWaterSurface()
-                        .frame(width: surfaceWidth(atCanvasY: waterY, canvasWidth: size.width,
-                                                   canvasHeight: size.height),
-                               height: surfaceHeight(atCanvasY: waterY, canvasWidth: size.width,
-                                                     canvasHeight: size.height))
-                        .position(x: size.width / 2, y: waterY)
-                        .frame(width: size.width, height: size.height)
-                        .mask(Image("glass_mask").resizable().scaledToFit())
+            ZStack(alignment: .topLeading) {
+                placed("widget_glass_empty", in: cropRect, size: size)
+                if hasWater {
+                    placed("widget_glass_water", in: cropRect, size: size)
+                        .mask(WaterlineShape(waterline: waterline, region: .belowCentreLine))
                 }
-
-                Image("empty_glass")
-                    .resizable()
-                    .scaledToFit()
+                words(transform: transform, size: size)
+                    .mask(WaterlineShape(waterline: waterline, region: .aboveFrontEdge))
+                if hasWater {
+                    words(transform: transform, size: size)
+                        .colorMultiply(GlassArt.underwaterTint)
+                        .blur(radius: 0.6 * scale)
+                        .opacity(0.94)
+                        .mask(WaterlineShape(waterline: waterline, region: .belowFrontEdge))
+                    WaterHaze(transform: transform, levelY: levelY, size: size)
+                    placed("widget_glass_surface", in: transform.surfaceRect(atLevelY: levelY), size: size)
+                }
             }
             .frame(width: size.width, height: size.height)
-            .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+            // Fade the photo's edges into the widget's background (the same blue).
+            .mask(
+                Rectangle()
+                    .frame(width: cropRect.width - 48 * scale, height: cropRect.height - 48 * scale)
+                    .position(x: cropRect.midX, y: cropRect.midY)
+                    .blur(radius: 12 * scale)
+            )
         }
-        .aspectRatio(visible.width / visible.height, contentMode: .fit)
+        .aspectRatio(crop.width / crop.height, contentMode: .fit)
         .accessibilityHidden(true)
     }
 
-    /// Inside width of the glass at a height in the 551×722 canvas.
-    /// Measured from `glass_mask`: the square artwork is centered vertically in the canvas, and its
-    /// interior narrows linearly from 46.3% of the image width near the rim (y = 0.138) to
-    /// 34.4% near the base (y = 0.825), in image-relative coordinates.
-    private func surfaceWidth(atCanvasY y: CGFloat, canvasWidth: CGFloat, canvasHeight: CGFloat) -> CGFloat {
-        let imageSide = canvasWidth                        // square image fitted to the canvas width
-        let imageTop = (canvasHeight - imageSide) / 2
-        let imageY = min(max((y - imageTop) / imageSide, 0.138), 0.825)
-        let fraction = 0.463 - (imageY - 0.138) * (0.463 - 0.344) / (0.825 - 0.138)
-        return imageSide * fraction
+    /// An image stretched to fill `rect` inside a full-size layer.
+    private func placed(_ name: String, in rect: CGRect, size: CGSize) -> some View {
+        Image(name)
+            .resizable()
+            .frame(width: rect.width, height: rect.height)
+            .position(x: rect.midX, y: rect.midY)
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
     }
 
-    /// Same proportions as the app: the surface ellipse is 88:480 of its width, and slightly
-    /// flatter the deeper it sits in the glass.
-    private func surfaceHeight(atCanvasY y: CGFloat, canvasWidth: CGFloat, canvasHeight: CGFloat) -> CGFloat {
-        let width = surfaceWidth(atCanvasY: y, canvasWidth: canvasWidth, canvasHeight: canvasHeight)
-        let depth = min(max(y / canvasHeight, 0), 1)
-        return width * (88.0 / 480.0) * (1.0 - 0.08 * depth)
-    }
-}
-
-/// Still version of the app's `WaterSurfaceTexture`: a soft light ellipse with a highlight,
-/// a bright front rim, a faint shaded back rim, and faint concentric ripple rings.
-private struct WidgetWaterSurface: View {
-    var body: some View {
-        GeometryReader { proxy in
-            let h = proxy.size.height
-            ZStack {
-                Ellipse().fill(Color.white.opacity(0.18))
-                Ellipse().fill(
-                    LinearGradient(stops: [
-                        .init(color: .white.opacity(0.55), location: 0.35),
-                        .init(color: .white.opacity(0.30), location: 0.65),
-                        .init(color: .white.opacity(0.18), location: 1.0),
-                    ], startPoint: .leading, endPoint: .trailing)
-                )
-                // Ripple rings
-                ForEach([0.72, 0.48], id: \.self) { inset in
-                    Ellipse()
-                        .stroke(Color.white.opacity(0.22), lineWidth: 1)
-                        .scaleEffect(inset)
-                }
-                // Front (near) rim catches the light; back (far) rim is slightly shaded.
-                Ellipse()
-                    .stroke(Color.white.opacity(0.32), lineWidth: max(1, h * 0.08))
-                    .mask(VStack(spacing: 0) { Color.clear; Color.black })
-                Ellipse()
-                    .stroke(Color.black.opacity(0.10), lineWidth: max(1, h * 0.06))
-                    .mask(VStack(spacing: 0) { Color.black; Color.clear })
-            }
+    /// "DRINK MORE WATER" from the photo, or the green "DAILY GOAL MET!" once the goal is met.
+    @ViewBuilder
+    private func words(transform: PhotoTransform, size: CGSize) -> some View {
+        if snapshot.isGoalMet {
+            GoalMetWords(transform: transform, size: size)
+        } else {
+            placed("widget_glass_words", in: transform.rect(GlassArt.wordsRect), size: size)
         }
     }
 }
