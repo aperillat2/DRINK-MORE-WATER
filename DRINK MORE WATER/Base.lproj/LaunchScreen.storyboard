@@ -21,7 +21,7 @@
                                 <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                             </imageView>
                         </subviews>
-                        <color key="backgroundColor" red="0.85882352941176465" green="0.92549019607843142" blue="0.94901960784313721" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <color key="backgroundColor" red="0.0" green="0.40000000000000002" blue="0.85882352941176465" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
                             <constraint firstItem="SplashImage" firstAttribute="top" secondItem="RootView" secondAttribute="top" id="Top-Edge"/>
                             <constraint firstItem="SplashImage" firstAttribute="bottom" secondItem="RootView" secondAttribute="bottom" id="Bottom-Edge"/>
@@ -36,6 +36,6 @@
         </scene>
     </scenes>
     <resources>
-        <image name="splash_photo" width="1024" height="1536"/>
+        <image name="splash_photo" width="1800" height="2400"/>
     </resources>
 </document>

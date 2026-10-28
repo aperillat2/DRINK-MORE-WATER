@@ -17,7 +17,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return true
     }
 
-    nonisolated func userNotificationCenter(
+    // Must stay on the main actor: when this returns, UIKit finishes handling the response
+    // (state restoration, snapshot) and asserts it's on the main thread. Running it
+    // nonisolated crashed with "Call must be made on main thread".
+    func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
