@@ -1,414 +1,417 @@
 import SwiftUI
-import CoreGraphics
-import UIKit
-import Combine
 
-enum WaterGlassMetrics {
-    static let glassSize = CGSize(width: 551, height: 722)
-    static let glassVerticalNudge: CGFloat = -20
-    static let textScale: CGFloat = 0.54
-    static let textOffset = CGSize(width: 0, height: 58)
-    static let maskVerticalOffset: CGFloat = 5
-    static let maskHorizontalOffset: CGFloat = 2
+// MARK: - Artwork geometry
+
+/// Measurements of the glass photos, in pixels of the original 896×1200 photo.
+///
+/// All of the main screen's glass artwork comes from two pixel-aligned photos — the splash photo
+/// (water + "DRINK MORE WATER") and the same glass empty — so every layer shares one coordinate
+/// space. The photo sits unscaled in the middle of a 2400×1800 canvas whose margins continue its
+/// blue background (`glass_background` and `splash_photo` are both that canvas). Showing the canvas
+/// aspect-filled puts the glass in exactly the same place as on the splash screen, on every device.
+enum GlassArt {
+    static let canvasSize = CGSize(width: 2400, height: 1800)
+    /// Where the photo's top-left corner sits in the canvas.
+    static let photoOrigin = CGPoint(x: 752, y: 300)
+
+    /// Horizontal centre of the glass.
+    static let centerX: CGFloat = 448
+    /// Centre line of the water surface when the daily goal is met: just under the rim lip
+    /// (which starts at y ≈ 160), like a full glass.
+    static let fullLevelY: CGFloat = 200
+    /// Centre line of the water surface for a nearly empty glass (just above the thick base).
+    static let emptyLevelY: CGFloat = 905
+
+    /// Where the surface sits in the splash photo, and its width there (it meets the glass walls
+    /// at x ≈ 195 and 700). The surface artwork is cut from this level.
+    static let photoLevelY: CGFloat = 377
+    static let photoSurfaceWidth: CGFloat = 505
+    /// Width of the water surface at other levels, measured from the glass's outline (which
+    /// flares slightly toward the rim and tapers toward the base): (level y, width).
+    static let surfaceWidths: [(y: CGFloat, width: CGFloat)] = [
+        (200, 517), (290, 506), (377, 505), (450, 495), (550, 472),
+        (650, 456), (750, 440), (850, 427), (925, 422),
+    ]
+    /// Distance from the surface's centre line to its front edge (the curve nearest the viewer).
+    static let surfaceFrontDepth: CGFloat = 21
+    /// Bottom of the water: the top of the glass's thick base.
+    static let waterBottomY: CGFloat = 930
+
+    /// The water, with the words and the surface removed (`glass_water`).
+    static let waterRect = CGRect(x: 180, y: 150, width: 537, height: 811)
+    /// The water surface cut from the splash photo (`glass_surface`), and the row of its centre line.
+    static let surfaceRect = CGRect(x: 183, y: 330, width: 532, height: 88)
+    static let surfaceCenterRow: CGFloat = 47
+    /// The words lifted from the splash photo (`glass_words`, white on transparent).
+    static let wordsRect = CGRect(x: 270, y: 470, width: 360, height: 350)
+    /// Centre rows of the three lines of words, and their cap height (used for "DAILY GOAL MET!").
+    static let wordLineCenters: [CGFloat] = [530, 643.5, 752]
+    static let wordCapHeight: CGFloat = 87
+    static let wordsCenterX: CGFloat = 445
+
+    /// The whole glass, rim to base: the area that responds to taps.
+    static let glassRect = CGRect(x: 170, y: 110, width: 560, height: 960)
+
+    /// Surface centre line for a fill level (0 = empty, 1 = full).
+    static func levelY(forFraction fraction: CGFloat) -> CGFloat {
+        emptyLevelY + (fullLevelY - emptyLevelY) * max(0, min(1, fraction))
+    }
+
+    /// Width of the water surface at a level, interpolated from `surfaceWidths`.
+    static func surfaceWidth(atLevelY y: CGFloat) -> CGFloat {
+        guard let first = surfaceWidths.first, let last = surfaceWidths.last else { return photoSurfaceWidth }
+        if y <= first.y { return first.width }
+        if y >= last.y { return last.width }
+        for (a, b) in zip(surfaceWidths, surfaceWidths.dropFirst()) where y <= b.y {
+            return a.width + (b.width - a.width) * (y - a.y) / (b.y - a.y)
+        }
+        return last.width
+    }
+
+    /// How much the surface artwork is scaled at a level, so its ends meet the glass walls.
+    static func surfaceScale(atLevelY y: CGFloat) -> CGFloat {
+        surfaceWidth(atLevelY: y) / photoSurfaceWidth
+    }
 }
 
+/// Maps photo coordinates to screen coordinates for a given screen size, the same way the
+/// splash screen's aspect-filled image does.
+struct GlassCanvasLayout: Equatable {
+    let size: CGSize
+    /// Screen points per photo pixel.
+    let scale: CGFloat
+    private let canvasOrigin: CGPoint
+
+    init(size: CGSize) {
+        self.size = size
+        let s = max(size.width / GlassArt.canvasSize.width, size.height / GlassArt.canvasSize.height)
+        scale = s.isFinite && s > 0 ? s : 1
+        canvasOrigin = CGPoint(
+            x: (size.width - GlassArt.canvasSize.width * scale) / 2,
+            y: (size.height - GlassArt.canvasSize.height * scale) / 2
+        )
+    }
+
+    func point(_ p: CGPoint) -> CGPoint {
+        CGPoint(x: canvasOrigin.x + (GlassArt.photoOrigin.x + p.x) * scale,
+                y: canvasOrigin.y + (GlassArt.photoOrigin.y + p.y) * scale)
+    }
+
+    func y(_ photoY: CGFloat) -> CGFloat { point(CGPoint(x: 0, y: photoY)).y }
+
+    func rect(_ r: CGRect) -> CGRect {
+        let o = point(r.origin)
+        return CGRect(x: o.x, y: o.y, width: r.width * scale, height: r.height * scale)
+    }
+
+    /// The whole canvas on screen (larger than the screen; the overflow is off-screen).
+    var canvasRect: CGRect {
+        CGRect(origin: canvasOrigin, size: CGSize(width: GlassArt.canvasSize.width * scale,
+                                                  height: GlassArt.canvasSize.height * scale))
+    }
+
+    var glassRect: CGRect { rect(GlassArt.glassRect) }
+}
+
+// MARK: - Glass view
+
+/// The main screen's full-screen glass: the empty-glass photo as the background, with the water
+/// from the splash photo revealed up to the current level, the photographed water surface moved to
+/// that level, and the words drawn crisp above the water and rippling below it.
 struct WaterGlassView: View {
+    /// 0 = empty, 1 = full (daily goal met: water just under the rim).
     let targetFraction: CGFloat
+    /// When set, the water is still (app inactive); otherwise it moves continuously.
     let frozenPhase: Double?
+    /// Start time of the ring that spreads across the surface after a tap.
     let surfacePulseStart: Double?
-    let hideUnderwaterText: Bool
-
-    private let surfacePulseDuration: Double = 0.9
-    private let surfacePulseSpeed: Double = 1.35
-
-    @Environment(\.displayScale) private var displayScale: CGFloat
-
-    @StateObject private var animator = WaterGlassAnimator()
-    @StateObject private var snapshotCache = SnapshotCache()
-    @State private var shimmerImage: Image?
-    @State private var innerShadowImage: Image?
+    /// Shows "DAILY GOAL MET!" in place of "DRINK MORE WATER".
+    let goalMet: Bool
+    let layout: GlassCanvasLayout
 
     static let waveSpeed: Double = 2.3
     static let glareSpeed: Double = 0.01
     static let rippleSeed = Double.random(in: 0...(2 * .pi))
 
-    /// Height/width of the surface mask artwork. Looked up once instead of on every frame.
-    static let cachedSurfaceMaskAspect: CGFloat = {
-        if let cg = UIImage(named: "glass_surface_mask")?.cgImage {
-            return CGFloat(cg.height) / CGFloat(cg.width)
-        }
-        return 88.0 / 480.0
-    }()
+    private let pulseDuration: Double = 0.9
+
+    /// Sideways sway of the underwater words and the distance between wave crests, in photo
+    /// pixels (about 2 pt and 80 pt on an iPhone): a gentle sway, about two waves across the words.
+    static let waveAmplitude: CGFloat = 4
+    static let waveLength: CGFloat = 160
+
+    @State private var animator = WaterGlassAnimator()
 
     var body: some View {
-        glassVisual
-            .onAppear(perform: configureOnAppear)
-            .onChange(of: targetFraction) { _, newValue in
-                updateAnimationState(with: newValue)
-            }
+        // Low Power Mode halves the frame rate to save battery.
+        let interval = ProcessInfo.processInfo.isLowPowerModeEnabled ? 1.0 / 15 : 1.0 / 30
+        TimelineView(.animation(minimumInterval: interval, paused: frozenPhase != nil)) { context in
+            let now = context.date.timeIntervalSinceReferenceDate
+            let snapshot = animator.snapshot(now: now, frozenPhase: frozenPhase)
+            scene(fraction: snapshot.fraction, phase: snapshot.ripplePhase, now: now)
+        }
+        .frame(width: layout.size.width, height: layout.size.height)
+        .clipped()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .onAppear { animator.configure(initialFraction: targetFraction) }
+        .onChange(of: targetFraction) { _, newValue in
+            animator.updateTargetFraction(newValue, now: Date.timeIntervalSinceReferenceDate)
+        }
     }
 
-    private var shouldAnimate: Bool {
-        frozenPhase == nil
+    private func scene(fraction: CGFloat, phase: Double, now: Double) -> some View {
+        let hasWater = fraction > 0.001
+        let levelY = GlassArt.levelY(forFraction: fraction)
+        let surfaceScale = GlassArt.surfaceScale(atLevelY: levelY)
+        // Screen y of the surface centre line; with no water everything counts as "above".
+        let screenLevel = hasWater ? layout.y(levelY) : layout.size.height + 1
+        let waterline = Waterline(
+            levelY: screenLevel,
+            centerX: layout.point(CGPoint(x: GlassArt.centerX, y: 0)).x,
+            halfWidth: GlassArt.surfaceWidth(atLevelY: levelY) / 2 * layout.scale,
+            frontDepth: GlassArt.surfaceFrontDepth * surfaceScale * layout.scale
+        )
+
+        return ZStack(alignment: .topLeading) {
+            placed("glass_background", in: layout.canvasRect)
+
+            if hasWater {
+                placed("glass_water", in: layout.rect(GlassArt.waterRect))
+                    .mask(WaterlineShape(waterline: waterline, region: .belowCentreLine))
+            }
+
+            // Words seen through air: crisp, exactly as on the splash screen.
+            words
+                .mask(WaterlineShape(waterline: waterline, region: .aboveFrontEdge))
+
+            // Words seen through water: swaying, slightly softened and tinted.
+            if hasWater {
+                // The phase grows without bound (seconds since 2001), which a shader's 32-bit
+                // float can't represent finely, so it's wrapped to one wave cycle first.
+                let wrappedPhase = phase.truncatingRemainder(dividingBy: 2 * .pi)
+                let amplitude = Self.waveAmplitude * layout.scale
+                words
+                    .distortionEffect(
+                        ShaderLibrary.underwaterWave(
+                            .float(Float(wrappedPhase)),
+                            .float(Float(amplitude)),
+                            .float(Float(Self.waveLength * layout.scale)),
+                            .float(Float(waterline.levelY + waterline.frontDepth))
+                        ),
+                        maxSampleOffset: CGSize(width: amplitude * 1.4, height: 0)
+                    )
+                    .colorMultiply(Color(red: 0.86, green: 0.95, blue: 1.0))
+                    .blur(radius: 0.6 * layout.scale)
+                    .opacity(0.94)
+                    .mask(WaterlineShape(waterline: waterline, region: .belowFrontEdge))
+            }
+
+            if hasWater {
+                haze(levelY: levelY)
+                surface(levelY: levelY, scale: surfaceScale)
+                pulseRings(waterline: waterline, now: now)
+            }
+        }
+        .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
+    }
+
+    /// An image stretched to fill `rect` (screen coordinates) inside a full-size layer.
+    private func placed(_ name: String, in rect: CGRect) -> some View {
+        Image(name)
+            .resizable()
+            .frame(width: rect.width, height: rect.height)
+            .position(x: rect.midX, y: rect.midY)
+            .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
+    }
+
+    /// "DRINK MORE WATER" from the splash photo, or "DAILY GOAL MET!" in the same style.
+    private var words: some View {
+        ZStack {
+            placed("glass_words", in: layout.rect(GlassArt.wordsRect))
+                .opacity(goalMet ? 0 : 1)
+            GoalMetWords(layout: layout)
+                .opacity(goalMet ? 1 : 0)
+        }
+        .animation(.easeInOut(duration: 0.35), value: goalMet)
+    }
+
+    /// The photographed water surface, scaled to the glass's width at `levelY` and centred on it.
+    private func surface(levelY: CGFloat, scale: CGFloat) -> some View {
+        let art = GlassArt.surfaceRect
+        let width = art.width * scale * layout.scale
+        let height = art.height * scale * layout.scale
+        let anchor = layout.point(CGPoint(x: GlassArt.centerX, y: levelY))
+        // Offsets of the artwork's centre from the point that lands on the centre line.
+        let dx = (art.width / 2 - (GlassArt.centerX - art.minX)) * scale * layout.scale
+        let dy = (art.height / 2 - GlassArt.surfaceCenterRow) * scale * layout.scale
+        return Image("glass_surface")
+            .resizable()
+            .frame(width: width, height: height)
+            .position(x: anchor.x + dx, y: anchor.y + dy)
+            .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
+    }
+
+    /// A faint milky haze filling the water inside the glass, a little denser toward the bottom,
+    /// so the water reads as slightly cloudy and the words behind it a bit washed out.
+    private func haze(levelY: CGFloat) -> some View {
+        let top = layout.y(levelY), bottom = layout.y(GlassArt.waterBottomY)
+        let height = max(layout.size.height, 1)
+        return WaterBodyShape(layout: layout, levelY: levelY)
+            .fill(LinearGradient(
+                stops: [
+                    .init(color: .white.opacity(0.07), location: top / height),
+                    .init(color: .white.opacity(0.13), location: bottom / height),
+                ],
+                startPoint: .top, endPoint: .bottom
+            ))
+            .blur(radius: 2 * layout.scale) // soft edges against the glass walls
+            .frame(width: layout.size.width, height: layout.size.height)
+    }
+
+    /// Rings that spread across the surface after a tap.
+    private func pulseRings(waterline: Waterline, now: Double) -> some View {
+        Canvas { context, _ in
+            guard let start = surfacePulseStart else { return }
+            let age = now - start
+            guard age >= 0, age <= pulseDuration else { return }
+            let progress = age / pulseDuration
+            for ring in 0..<3 {
+                let p = progress - Double(ring) * 0.15
+                guard p > 0, p <= 1 else { continue }
+                let grow = CGFloat(min(1, p * 1.35))
+                let rect = CGRect(
+                    x: waterline.centerX - waterline.halfWidth * grow,
+                    y: waterline.levelY - waterline.frontDepth * grow,
+                    width: waterline.halfWidth * 2 * grow,
+                    height: waterline.frontDepth * 2 * grow
+                )
+                context.stroke(
+                    Path(ellipseIn: rect),
+                    with: .color(.white.opacity(0.30 * (1 - p))),
+                    lineWidth: max(1, 2.5 * layout.scale * (1 - CGFloat(p) * 0.6))
+                )
+            }
+        }
+        .frame(width: layout.size.width, height: layout.size.height)
     }
 }
 
-private extension WaterGlassView {
-    func configureOnAppear() {
-        let clamped = clamp01(targetFraction)
-        animator.configure(initialFraction: clamped)
-        if shimmerImage == nil {
-            shimmerImage = GlassOverlayFactory.shimmerImage(size: WaterGlassMetrics.glassSize)
-        }
-        if innerShadowImage == nil {
-            innerShadowImage = GlassOverlayFactory.innerShadowImage(size: WaterGlassMetrics.glassSize)
-        }
-    }
+/// "DAILY GOAL MET!" laid out like the photo's words: same line positions and cap height,
+/// in a condensed bold face close to the photo's lettering, coloured green.
+private struct GoalMetWords: View {
+    let layout: GlassCanvasLayout
 
-    func updateAnimationState(with newValue: CGFloat) {
-        animator.updateTargetFraction(clamp01(newValue), now: Date.timeIntervalSinceReferenceDate)
-    }
+    /// Bright green so the met goal stands out against the blue water.
+    static let goalGreen = Color(red: 0.22, green: 0.88, blue: 0.42)
 
-    var glassVisual: AnyView {
-        // The waves are always moving, so this redraws continuously; halve the rate in
-        // Low Power Mode to save battery.
-        let fps: Double = ProcessInfo.processInfo.isLowPowerModeEnabled ? 15.0 : 30.0
-        if shouldAnimate {
-            return AnyView(
-                TimelineView(.periodic(from: .now, by: 1.0 / fps)) { context in
-                    let now = context.date.timeIntervalSinceReferenceDate
-                    buildGlassContent(now: now)
-                }
-            )
-        } else {
-            return buildStaticGlassContent()
-        }
-    }
-
-    func buildGlassContent(now: Double) -> AnyView {
-        let snapshot = animator.snapshot(now: now, frozenPhase: frozenPhase)
-        snapshotCache.snapshot = snapshot
-        snapshotCache.timestamp = now
-        return makeGlassContent(from: snapshot, now: now)
-    }
-
-    func buildStaticGlassContent() -> AnyView {
-        if let snapshot = snapshotCache.snapshot {
-            return makeGlassContent(from: snapshot, now: snapshotCache.timestamp)
-        } else {
-            let now = Date.timeIntervalSinceReferenceDate
-            return buildGlassContent(now: now)
-        }
-    }
-
-    func makeGlassContent(from snapshot: WaterGlassAnimator.Snapshot, now: Double) -> AnyView {
-        let fraction = snapshot.fraction
-        let ripplePhase = snapshot.ripplePhase
-        let glarePhase = snapshot.glarePhase
-
-        let glassSize = WaterGlassMetrics.glassSize
-        let waterTop = glassSize.height * (1 - fraction)
-        let px = 1.0 / max(displayScale, 1)
-        let waterTopAligned = round(waterTop / px) * px
-
-        let yFrac = max(0, min(1, waterTopAligned / glassSize.height))
-        let widthFraction = GlassWidthAnalyzer.shared.widthFraction(atYFraction: yFrac) ?? 1.0
-
-        let fillMask = makeFillMask(
-            waterTopAligned: waterTopAligned,
-            widthFraction: widthFraction,
-            surfaceMaskAspect: surfaceMaskAspect
-        )
-
-        return makeGlassStack(
-            now: now,
-            fillMask: fillMask,
-            hideUnderwaterText: hideUnderwaterText,
-            fraction: fraction,
-            ripplePhase: ripplePhase,
-            glarePhase: glarePhase,
-            widthFraction: widthFraction,
-            surfaceMaskAspect: surfaceMaskAspect,
-            waterTopAligned: waterTopAligned
-        )
-    }
-
-    func makeGlassStack(
-        now: Double,
-        fillMask: AnyView,
-        hideUnderwaterText: Bool,
-        fraction: CGFloat,
-        ripplePhase: Double,
-        glarePhase: Double,
-        widthFraction: CGFloat,
-        surfaceMaskAspect: CGFloat,
-        waterTopAligned: CGFloat
-    ) -> AnyView {
-        let glassSize = WaterGlassMetrics.glassSize
-        return AnyView(
-            ZStack {
-                refractedGlassText(
-                    fraction: fraction,
-                    ripplePhase: ripplePhase,
-                    widthFraction: widthFraction,
-                    surfaceMaskAspect: surfaceMaskAspect,
-                    hideUnderwaterText: hideUnderwaterText
-                )
-                .transaction { $0.animation = nil }
-                .animation(nil, value: fraction)
-
-                WaterFillRenderer(
-                    glassSize: glassSize,
-                    verticalOffset: WaterGlassMetrics.glassVerticalNudge,
-                    waterTopY: waterTopAligned,
-                    baseColor: Color(.sRGB, red: 0.78, green: 0.88, blue: 0.98, opacity: 0.42),
-                    highlightColor: Color.white.opacity(0.9)
-                )
-                .mask(fillMask)
-                .allowsHitTesting(false)
-
-                WaterSurfaceOverlay(
-                    glassSize: glassSize,
-                    verticalOffset: WaterGlassMetrics.glassVerticalNudge,
-                    waterY: waterTopAligned,
-                    widthFraction: widthFraction,
-                    surfaceMaskAspect: surfaceMaskAspect,
-                    ripplePhase: ripplePhase,
-                    glarePhase: glarePhase,
-                    pulseStart: surfacePulseStart,
-                    now: now,
-                    pulseDuration: surfacePulseDuration,
-                    pulseSpeed: surfacePulseSpeed
-                )
-                .mask(glassMaskAlignedToFill())
-                .transaction { $0.animation = nil }
-                .animation(nil, value: waterTopAligned)
-                .allowsHitTesting(false)
-
-                let px = 1.0 / max(displayScale, 1)
-                let contentY = round(WaterGlassMetrics.glassVerticalNudge / px) * px
-                let shimmerMaskBiasY: CGFloat = 0
-
-                if let shimmerImage {
-                    shimmerImage
-                        .resizable()
-                        .frame(width: glassSize.width, height: glassSize.height)
-                        .offset(y: contentY)
-                        .mask(glassMaskForOverlays(biasY: shimmerMaskBiasY))
-                        .blendMode(.screen)
-                        .allowsHitTesting(false)
-                } else {
-                    GlassLightShimmerCanvas(glassSize: glassSize)
-                        .offset(y: contentY)
-                        .mask(glassMaskForOverlays(biasY: shimmerMaskBiasY))
-                        .blendMode(.screen)
-                        .allowsHitTesting(false)
-                }
-
-                if let innerShadowImage {
-                    innerShadowImage
-                        .resizable()
-                        .frame(width: glassSize.width, height: glassSize.height)
-                        .offset(y: contentY)
-                        .mask(glassMaskForOverlays(biasY: shimmerMaskBiasY))
-                        .blendMode(.multiply)
-                        .allowsHitTesting(false)
-                } else {
-                    GlassInnerShadowCanvas(glassSize: glassSize)
-                        .offset(y: contentY)
-                        .mask(glassMaskForOverlays(biasY: shimmerMaskBiasY))
-                        .blendMode(.multiply)
-                        .allowsHitTesting(false)
-                }
-
-                Image("empty_glass")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: glassSize.width, height: glassSize.height)
-                    .offset(y: WaterGlassMetrics.glassVerticalNudge)
-                    .accessibilityHidden(true)
+    var body: some View {
+        let lines = ["DAILY", "GOAL", "MET!"]
+        // SF's cap height is about 0.705 of the point size.
+        let fontSize = GlassArt.wordCapHeight / 0.705 * layout.scale
+        ZStack(alignment: .topLeading) {
+            ForEach(Array(zip(lines.indices, lines)), id: \.0) { index, line in
+                let center = layout.point(CGPoint(x: GlassArt.wordsCenterX, y: GlassArt.wordLineCenters[index]))
+                Text(line)
+                    .font(.system(size: fontSize, weight: .bold).width(.condensed))
+                    .foregroundStyle(Self.goalGreen)
+                    .fixedSize()
+                    .position(center)
             }
-        )
+        }
+        .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
+        .dynamicTypeSize(.large) // part of the artwork, so it doesn't follow text-size settings
     }
-
-    func makeFillMask(
-        waterTopAligned: CGFloat,
-        widthFraction: CGFloat,
-        surfaceMaskAspect: CGFloat
-    ) -> AnyView {
-        AnyView(
-            ZStack {
-                glassMaskAlignedToFill()
-                WaterSurfaceCutout(
-                    glassSize: WaterGlassMetrics.glassSize,
-                    verticalOffset: WaterGlassMetrics.glassVerticalNudge,
-                    waterY: waterTopAligned,
-                    widthFraction: widthFraction,
-                    surfaceMaskAspect: surfaceMaskAspect
-                )
-                .blendMode(.destinationOut)
-                .transaction { $0.animation = nil }
-                .animation(nil, value: waterTopAligned)
-            }
-            .compositingGroup()
-            .drawingGroup()
-        )
-    }
-
-    var surfaceMaskAspect: CGFloat { WaterGlassView.cachedSurfaceMaskAspect }
-
-    func glassMaskForOverlays(biasY: CGFloat = 0) -> some View {
-        let px = 1.0 / max(displayScale, 1)
-        let y = round((WaterGlassMetrics.glassVerticalNudge + WaterGlassMetrics.maskVerticalOffset + biasY) / px) * px
-        return Image("glass_mask")
-            .resizable()
-            .scaledToFit()
-            .frame(width: WaterGlassMetrics.glassSize.width, height: WaterGlassMetrics.glassSize.height)
-            .offset(x: WaterGlassMetrics.maskHorizontalOffset, y: y)
-    }
-
-    func glassMaskAlignedToFill() -> some View {
-        Image("glass_mask")
-            .resizable()
-            .scaledToFit()
-            .frame(width: WaterGlassMetrics.glassSize.width, height: WaterGlassMetrics.glassSize.height)
-            .offset(x: WaterGlassMetrics.maskHorizontalOffset, y: WaterGlassMetrics.glassVerticalNudge)
-    }
-
-    func refractionSeamOffset(waterY: CGFloat, widthFraction: CGFloat) -> CGFloat {
-        let px = 1.0 / max(displayScale, 1)
-        let surfaceWidth = max(1, WaterGlassMetrics.glassSize.width * widthFraction)
-        let depth = min(max(waterY / WaterGlassMetrics.glassSize.height, 0), 1)
-        let foreshortenY: CGFloat = 1.0 - 0.08 * depth
-        let surfaceHeight = max(1, surfaceWidth * surfaceMaskAspect * foreshortenY)
-        let rel = surfaceHeight * 0.48
-        let off = max(px, min(rel, 24))
-        return round(off / px) * px
-    }
-
-    func refractedGlassText(
-        fraction: CGFloat,
-        ripplePhase: Double,
-        widthFraction: CGFloat,
-        surfaceMaskAspect: CGFloat,
-        hideUnderwaterText: Bool
-    ) -> AnyView {
-        let glassSize = WaterGlassMetrics.glassSize
-        let clamped = max(0, min(fraction, 1))
-        let realWaterY = max(0, min(glassSize.height, glassSize.height * (1 - clamped)))
-
-        let seam = refractionSeamOffset(waterY: realWaterY, widthFraction: widthFraction)
-        let underwaterStartY = realWaterY + seam
-
-        let px = 1.0 / max(displayScale, 1)
-        let localAbove = max(0, min(glassSize.height, realWaterY - WaterGlassMetrics.textOffset.height))
-        let aboveAligned = round(localAbove / px) * px
-
-        let underwaterTextTint: Color = Color(hue: 0.58, saturation: 0.5, brightness: 1.0)
-        let shouldHideUnderwater = hideUnderwaterText || clamped >= 0.999
-        let showGoalBadge = hideUnderwaterText
-
-        return AnyView(
-            ZStack {
-                Image("glass_text")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: glassSize.width, height: glassSize.height)
-                    .scaleEffect(WaterGlassMetrics.textScale)
-                    .offset(y: WaterGlassMetrics.glassVerticalNudge)
-                    .offset(x: WaterGlassMetrics.textOffset.width, y: WaterGlassMetrics.textOffset.height)
-                    .mask(
-                        Rectangle()
-                            .frame(width: glassSize.width, height: aboveAligned)
-                            .offset(y: WaterGlassMetrics.glassVerticalNudge + WaterGlassMetrics.textOffset.height - glassSize.height/2 + aboveAligned/2)
-                    )
-                    // Clip to the glass too, like the other layers. Without this, the text layer's
-                    // faint edges showed as a rectangle extending past the sides of the glass.
-                    .mask(glassMask())
-                    .transaction { $0.animation = nil }
-                    .animation(nil, value: aboveAligned)
-                    .animation(nil, value: fraction)
-                    .animation(.easeInOut(duration: 0.35), value: showGoalBadge)
-                    .opacity(showGoalBadge ? 0 : 1)
-                    .accessibilityHidden(true)
-
-                if showGoalBadge {
-                    Image("daily_goal_met")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: glassSize.width, height: glassSize.height)
-                        .scaleEffect(WaterGlassMetrics.textScale)
-                        .offset(y: WaterGlassMetrics.glassVerticalNudge)
-                        .offset(x: WaterGlassMetrics.textOffset.width, y: WaterGlassMetrics.textOffset.height)
-                        .mask(
-                            Rectangle()
-                                .frame(width: glassSize.width, height: aboveAligned)
-                                .offset(y: WaterGlassMetrics.glassVerticalNudge + WaterGlassMetrics.textOffset.height - glassSize.height/2 + aboveAligned/2)
-                        )
-                        .mask(glassMask())
-                        .transaction { $0.animation = nil }
-                        .animation(nil, value: aboveAligned)
-                        .accessibilityHidden(true)
-                }
-
-                if !shouldHideUnderwater {
-                    RefractedTextView(
-                        imageName: "glass_text",
-                        glassSize: glassSize,
-                        textScale: WaterGlassMetrics.textScale,
-                        textOffset: WaterGlassMetrics.textOffset,
-                        verticalNudge: WaterGlassMetrics.glassVerticalNudge,
-                        waterline: underwaterStartY,
-                        ripplePhase: ripplePhase,
-                        rippleAmplitude: 4
-                    )
-                    .mask(glassMask())
-                    .colorMultiply(underwaterTextTint)
-                    .transaction { $0.animation = nil }
-                    .animation(nil, value: fraction)
-                    .animation(.easeInOut(duration: 0.35), value: showGoalBadge)
-                    .opacity(showGoalBadge ? 0 : 1)
-                    .accessibilityHidden(true)
-                }
-
-                if showGoalBadge {
-                    RefractedTextView(
-                        imageName: "daily_goal_met",
-                        glassSize: glassSize,
-                        textScale: WaterGlassMetrics.textScale,
-                        textOffset: WaterGlassMetrics.textOffset,
-                        verticalNudge: WaterGlassMetrics.glassVerticalNudge,
-                        waterline: underwaterStartY,
-                        ripplePhase: ripplePhase,
-                        rippleAmplitude: 4
-                    )
-                    .mask(glassMask())
-                    .transaction { $0.animation = nil }
-                    .animation(nil, value: fraction)
-                    .accessibilityHidden(true)
-                }
-            }
-        )
-    }
-
-    func glassMask() -> some View {
-        Image("glass_mask")
-            .resizable()
-            .scaledToFit()
-            .frame(width: WaterGlassMetrics.glassSize.width, height: WaterGlassMetrics.glassSize.height)
-            .offset(x: WaterGlassMetrics.maskHorizontalOffset, y: WaterGlassMetrics.glassVerticalNudge + WaterGlassMetrics.maskVerticalOffset)
-    }
-
-    func clamp01(_ x: CGFloat) -> CGFloat { max(0, min(1, x)) }
 }
 
-private final class SnapshotCache: ObservableObject {
-    var snapshot: WaterGlassAnimator.Snapshot?
-    var timestamp: Double = Date.timeIntervalSinceReferenceDate
+// MARK: - Waterline
+
+/// Where the water surface is on screen, as an ellipse: its centre line and its front edge.
+struct Waterline: Equatable {
+    var levelY: CGFloat
+    var centerX: CGFloat
+    var halfWidth: CGFloat
+    var frontDepth: CGFloat
+
+    /// Screen y of the surface's front edge at `x` (the centre line beyond the glass walls).
+    func frontEdgeY(atX x: CGFloat) -> CGFloat {
+        guard halfWidth > 0 else { return levelY }
+        let u = (x - centerX) / halfWidth
+        guard abs(u) < 1 else { return levelY }
+        return levelY + frontDepth * sqrt(1 - u * u)
+    }
 }
 
+/// The water inside the glass: from the surface's centre line down to the base, between the walls.
+struct WaterBodyShape: Shape {
+    let layout: GlassCanvasLayout
+    let levelY: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let bottom = GlassArt.waterBottomY
+        guard levelY < bottom else { return Path() }
+        let steps = 24
+        let rows = (0...steps).map { levelY + (bottom - levelY) * CGFloat($0) / CGFloat(steps) }
+        func wall(_ y: CGFloat, side: CGFloat) -> CGPoint {
+            layout.point(CGPoint(x: GlassArt.centerX + side * GlassArt.surfaceWidth(atLevelY: y) / 2, y: y))
+        }
+        var path = Path()
+        path.move(to: wall(rows[0], side: -1))
+        for y in rows.dropFirst() { path.addLine(to: wall(y, side: -1)) }
+        for y in rows.reversed() { path.addLine(to: wall(y, side: 1)) }
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// The part of the screen above or below the waterline.
+struct WaterlineShape: Shape {
+    enum Region { case belowCentreLine, aboveFrontEdge, belowFrontEdge }
+
+    let waterline: Waterline
+    let region: Region
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        switch region {
+        case .belowCentreLine:
+            let top = max(rect.minY, min(waterline.levelY, rect.maxY))
+            path.addRect(CGRect(x: rect.minX, y: top, width: rect.width, height: rect.maxY - top))
+        case .aboveFrontEdge:
+            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: waterline.levelY))
+            for point in frontEdge(in: rect).reversed() { path.addLine(to: point) }
+            path.closeSubpath()
+        case .belowFrontEdge:
+            path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+            for point in frontEdge(in: rect) { path.addLine(to: point) }
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.closeSubpath()
+        }
+        return path
+    }
+
+    /// The front edge sampled left to right across the screen.
+    private func frontEdge(in rect: CGRect) -> [CGPoint] {
+        let steps = 48
+        let left = waterline.centerX - waterline.halfWidth, right = waterline.centerX + waterline.halfWidth
+        var points = [CGPoint(x: rect.minX, y: waterline.levelY), CGPoint(x: left, y: waterline.levelY)]
+        for i in 0...steps {
+            let x = left + (right - left) * CGFloat(i) / CGFloat(steps)
+            points.append(CGPoint(x: x, y: waterline.frontEdgeY(atX: x)))
+        }
+        points.append(CGPoint(x: right, y: waterline.levelY))
+        points.append(CGPoint(x: rect.maxX, y: waterline.levelY))
+        return points
+    }
+}
+
+// MARK: - Level animation
+
+/// Eases the displayed water level toward its target and keeps the ripple phases moving.
 @MainActor
-final class WaterGlassAnimator: ObservableObject {
+final class WaterGlassAnimator {
     private let levelAnimDuration: Double = 1.5
 
     private var displayedFraction: CGFloat = 0
@@ -489,579 +492,3 @@ final class WaterGlassAnimator: ObservableObject {
         let glarePhase: Double
     }
 }
-
-// MARK: - Helper Views / Components
-
-private struct WaterSurfaceCutout: View {
-    let glassSize: CGSize
-    let verticalOffset: CGFloat
-    let waterY: CGFloat
-    let widthFraction: CGFloat
-    let surfaceMaskAspect: CGFloat
-    @Environment(\.displayScale) private var displayScale: CGFloat
-
-    var body: some View {
-        let surfaceWidth  = max(1, glassSize.width * widthFraction)
-        let depth = min(max(waterY / glassSize.height, 0), 1)
-        let foreshortenY: CGFloat = 1.0 - 0.08 * depth
-        let baseHeight = max(1, surfaceWidth * surfaceMaskAspect * foreshortenY)
-
-        let px = 1.0 / max(displayScale, 1)
-        let overscanUp = 3 * px
-        let cutoutHeight = baseHeight + overscanUp
-        let cutoutCenterY = waterY - overscanUp / 2
-
-        Rectangle()
-            .fill(.white)
-            .frame(width: surfaceWidth, height: cutoutHeight)
-            .mask(
-                Image("glass_surface_mask")
-                    .resizable()
-                    .frame(width: surfaceWidth, height: cutoutHeight)
-            )
-            .frame(width: glassSize.width, height: glassSize.height)
-            .position(x: glassSize.width / 2, y: cutoutCenterY)
-            .offset(y: verticalOffset)
-            .allowsHitTesting(false)
-    }
-}
-
-private struct WaterSurfaceOverlay: View {
-    let glassSize: CGSize
-    let verticalOffset: CGFloat
-    let waterY: CGFloat
-    let widthFraction: CGFloat
-    let surfaceMaskAspect: CGFloat
-    let ripplePhase: Double
-    let glarePhase: Double
-    let pulseStart: Double?
-    let now: Double
-    let pulseDuration: Double
-    let pulseSpeed: Double
-
-    var body: some View {
-        let surfaceWidth = max(1, glassSize.width * widthFraction)
-        let depth = min(max(waterY / glassSize.height, 0), 1)
-        let foreshortenY: CGFloat = 1.0 - 0.08 * depth
-        let surfaceHeight = max(1, surfaceWidth * surfaceMaskAspect * foreshortenY)
-
-        ZStack {
-            WaterSurfaceTexture(
-                size: CGSize(width: surfaceWidth, height: surfaceHeight),
-                phase: ripplePhase,
-                glarePhase: glarePhase,
-                pulseStart: pulseStart,
-                now: now,
-                pulseDuration: pulseDuration,
-                pulseSpeed: pulseSpeed
-            )
-            .mask(
-                Image("glass_surface_mask")
-                    .resizable()
-                    .renderingMode(.original)
-                    .frame(width: surfaceWidth, height: surfaceHeight)
-            )
-            .position(x: glassSize.width / 2, y: waterY)
-        }
-        .frame(width: glassSize.width, height: glassSize.height)
-        .offset(y: verticalOffset)
-        .allowsHitTesting(false)
-    }
-}
-
-private struct WaterSurfaceTexture: View {
-    let size: CGSize
-    let phase: Double
-    let glarePhase: Double
-    let pulseStart: Double?
-    let now: Double
-    let pulseDuration: Double
-    let pulseSpeed: Double
-
-    var body: some View {
-        Canvas { context, _ in
-            let rect = CGRect(origin: .zero, size: size)
-
-            context.fill(Path(ellipseIn: rect), with: .color(Color.white.opacity(0.18)))
-
-            let base = Gradient(stops: [
-                .init(color: Color.white.opacity(0.55), location: 0.35),
-                .init(color: Color.white.opacity(0.30), location: 0.65),
-                .init(color: Color.white.opacity(0.18), location: 1.00),
-            ])
-            context.fill(
-                Path(ellipseIn: rect),
-                with: .linearGradient(
-                    base,
-                    startPoint: CGPoint(x: rect.minX, y: rect.midY),
-                    endPoint:   CGPoint(x: rect.maxX, y: rect.midY)
-                )
-            )
-
-            let rippleDrift = CGFloat(phase * 0.90)
-            let oscillation = (sin(glarePhase) * 0.5 + 0.5)
-            let w = rect.width
-            let x0 = rect.minX + oscillation * w
-            let streakRect = CGRect(
-                x: x0 - w * 0.08,
-                y: rect.minY + rect.height * 0.18,
-                width: w * 0.16,
-                height: rect.height * 0.64
-            )
-            let streak = Gradient(stops: [
-                .init(color: Color.white.opacity(0.0),  location: 0.0),
-                .init(color: Color.white.opacity(0.25), location: 0.5),
-                .init(color: Color.white.opacity(0.0),  location: 1.0),
-            ])
-            context.fill(
-                Path(streakRect),
-                with: .linearGradient(
-                    streak,
-                    startPoint: CGPoint(x: streakRect.minX, y: streakRect.minY),
-                    endPoint:   CGPoint(x: streakRect.maxX, y: streakRect.minY)
-                )
-            )
-
-            let lines = 5
-            let amp = max(0.6, size.height * 0.05)
-            let baseY = rect.midY
-            let kd = 2 * Double.pi / Double(max(10.0, size.width * 0.7))
-            let omega: Double = 1.8
-            let driftD = Double(rippleDrift) * omega
-            for i in 0..<lines {
-                var p = Path()
-                let yCenter = baseY + CGFloat(i - lines/2) * size.height * 0.07
-                let localAmp = amp * (1 - CGFloat(i) / CGFloat(lines)) * 0.7
-                let step: CGFloat = 5
-                var x = rect.minX
-                var first = true
-                while x <= rect.maxX {
-                    let y = yCenter + CGFloat(sin(kd * (Double(x) - driftD))) * localAmp
-                    if first {
-                        p.move(to: CGPoint(x: x, y: y))
-                        first = false
-                    } else {
-                        p.addLine(to: CGPoint(x: x, y: y))
-                    }
-                    x += step
-                }
-                context.stroke(p, with: .color(Color.white.opacity(0.22)), lineWidth: 1)
-            }
-
-            if let s = pulseStart {
-                let age = now - s
-                if age >= 0, age <= pulseDuration {
-                    let progress = age / pulseDuration
-                    for j in 0..<3 {
-                        let pr = progress - Double(j) * 0.15
-                        if pr <= 0 || pr > 1 { continue }
-                        let grow = pr * pulseSpeed
-                        let wR = rect.width * min(1.0, grow)
-                        let hR = rect.height * min(1.0, grow)
-                        let ringRect = CGRect(x: rect.midX - wR/2, y: rect.midY - hR/2, width: wR, height: hR)
-                        let alpha = CGFloat((1 - pr)) * 0.35
-                        let lw = max(1, rect.height * 0.06 * (1 - CGFloat(pr) * 0.7))
-                        context.stroke(Path(ellipseIn: ringRect), with: .color(Color.white.opacity(alpha)), lineWidth: lw)
-                    }
-                }
-            }
-
-            let inset = max(rect.width, rect.height) * 0.015
-            let ringRect = rect.insetBy(dx: inset, dy: inset)
-            let ring = Path(ellipseIn: ringRect)
-
-            context.drawLayer { layer in
-                let nearHalf = Path(CGRect(x: rect.minX, y: rect.midY, width: rect.width, height: rect.height/2))
-                layer.clip(to: nearHalf)
-                layer.stroke(ring, with: .color(Color.white.opacity(0.32)), lineWidth: max(1, rect.height * 0.08))
-            }
-            context.drawLayer { layer in
-                let farHalf = Path(CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height/2))
-                layer.clip(to: farHalf)
-                layer.stroke(ring, with: .color(Color.black.opacity(0.10)), lineWidth: max(1, rect.height * 0.06))
-            }
-        }
-        .frame(width: size.width, height: size.height)
-    }
-}
-
-private struct GlassLightShimmerCanvas: View {
-    let glassSize: CGSize
-    var body: some View {
-        Canvas { ctx, size in
-            let r = CGRect(origin: .zero, size: size)
-
-            let gloss = Gradient(stops: [
-                .init(color: .white.opacity(0.35), location: 0.18),
-                .init(color: .white.opacity(0.10), location: 0.58),
-                .init(color: .white.opacity(0.00), location: 0.95),
-            ])
-            ctx.fill(Path(r), with: .linearGradient(gloss,
-                startPoint: CGPoint(x: r.minX, y: r.midY),
-                endPoint:   CGPoint(x: r.maxX, y: r.midY)))
-
-            func streak(_ xFrac: CGFloat, widthFrac: CGFloat, alpha: Double, y0: CGFloat, y1: CGFloat) {
-                let w = r.width * widthFrac
-                let h = r.height * (y1 - y0)
-                let x = r.minX + r.width * xFrac - w/2
-                let y = r.minY + r.height * y0
-                let rr = CGRect(x: x, y: y, width: w, height: h)
-                let g = Gradient(stops: [
-                    .init(color: .white.opacity(0.00), location: 0.00),
-                    .init(color: .white.opacity(alpha), location: 0.50),
-                    .init(color: .white.opacity(0.00), location: 1.00),
-                ])
-                ctx.fill(Path(roundedRect: rr, cornerRadius: w/2),
-                         with: .linearGradient(g,
-                            startPoint: CGPoint(x: rr.minX, y: rr.midY),
-                            endPoint:   CGPoint(x: rr.maxX, y: rr.midY)))
-            }
-
-            streak(0.30, widthFrac: 0.055, alpha: 0.38, y0: 0.16, y1: 0.76)
-            streak(0.66, widthFrac: 0.040, alpha: 0.22, y0: 0.22, y1: 0.72)
-
-            let rimInsetX = r.width * 0.06
-            let rimInsetY = r.height * 0.06
-            let rimRect = r.insetBy(dx: rimInsetX, dy: rimInsetY)
-            let ellipse = Path(ellipseIn: rimRect)
-
-            ctx.drawLayer { layer in
-                layer.clip(to: Path(CGRect(x: r.minX, y: r.midY, width: r.width, height: r.height/2)))
-                layer.stroke(ellipse, with: .color(.white.opacity(0.28)),
-                             lineWidth: max(1, r.height * 0.035))
-            }
-            ctx.drawLayer { layer in
-                layer.clip(to: Path(CGRect(x: r.minX, y: r.minY, width: r.width, height: r.height/2)))
-                layer.stroke(ellipse, with: .color(.white.opacity(0.10)),
-                             lineWidth: max(1, r.height * 0.025))
-            }
-        }
-        .frame(width: glassSize.width, height: glassSize.height)
-    }
-}
-
-private struct GlassInnerShadowCanvas: View {
-    let glassSize: CGSize
-    var body: some View {
-        Canvas { ctx, size in
-            let r = CGRect(origin: .zero, size: size)
-
-            let edgeW = max(1, r.width * 0.10)
-            let leftRect  = CGRect(x: r.minX, y: r.minY, width: edgeW, height: r.height)
-            let rightRect = CGRect(x: r.maxX - edgeW, y: r.minY, width: edgeW, height: r.height)
-
-            let leftGrad = Gradient(stops: [
-                .init(color: .black.opacity(0.18), location: 0.00),
-                .init(color: .black.opacity(0.00), location: 1.00),
-            ])
-            let rightGrad = Gradient(stops: [
-                .init(color: .black.opacity(0.00), location: 0.00),
-                .init(color: .black.opacity(0.18), location: 1.00),
-            ])
-
-            ctx.fill(Path(leftRect),
-                     with: .linearGradient(leftGrad,
-                        startPoint: CGPoint(x: leftRect.minX, y: leftRect.midY),
-                        endPoint:   CGPoint(x: leftRect.maxX, y: leftRect.midY)))
-
-            ctx.fill(Path(rightRect),
-                     with: .linearGradient(rightGrad,
-                        startPoint: CGPoint(x: rightRect.minX, y: rightRect.midY),
-                        endPoint:   CGPoint(x: rightRect.maxX, y: rightRect.midY)))
-
-            let bottomH = r.height * 0.10
-            let bottomRect = CGRect(x: r.minX, y: r.maxY - bottomH, width: r.width, height: bottomH)
-            let bottomGrad = Gradient(stops: [
-                .init(color: .black.opacity(0.16), location: 0.00),
-                .init(color: .black.opacity(0.00), location: 1.00),
-            ])
-            ctx.fill(Path(bottomRect),
-                     with: .linearGradient(bottomGrad,
-                        startPoint: CGPoint(x: bottomRect.midX, y: bottomRect.maxY),
-                        endPoint:   CGPoint(x: bottomRect.midX, y: bottomRect.minY)))
-        }
-        .frame(width: glassSize.width, height: glassSize.height)
-        .opacity(0.6)
-    }
-}
-
-private struct WaterFillRenderer: View {
-    let glassSize: CGSize
-    let verticalOffset: CGFloat
-    let waterTopY: CGFloat
-    let baseColor: Color
-    let highlightColor: Color
-
-    var body: some View {
-        Canvas { context, size in
-            let width = size.width
-            let height = size.height
-            let top = max(0, min(waterTopY, height))
-            let waterHeight = max(0.0, height - top)
-            guard waterHeight > 0.5 else { return }
-            let waterRect = CGRect(x: 0, y: top, width: width, height: waterHeight)
-            drawBaseGradient(context: &context, rect: waterRect, width: width)
-        }
-        .frame(width: glassSize.width, height: glassSize.height)
-        .offset(y: verticalOffset)
-    }
-
-    private func drawBaseGradient(context: inout GraphicsContext, rect: CGRect, width: CGFloat) {
-        let gradient = Gradient(stops: [
-            .init(color: baseColor.mix(with: .white, fraction: 0.35).opacity(0.88), location: 0),
-            .init(color: baseColor.opacity(0.82), location: 0.5),
-            .init(color: baseColor.mix(with: .white, fraction: 0.55).opacity(0.76), location: 1)
-        ])
-        context.fill(
-            Path(rect),
-            with: .linearGradient(
-                gradient,
-                startPoint: CGPoint(x: width * 0.3, y: rect.minY),
-                endPoint:   CGPoint(x: width * 0.7, y: rect.maxY)
-            )
-        )
-    }
-}
-
-@MainActor
-private enum GlassOverlayFactory {
-    static func shimmerImage(size: CGSize) -> Image? {
-        render(content: GlassLightShimmerCanvas(glassSize: size))
-    }
-
-    static func innerShadowImage(size: CGSize) -> Image? {
-        render(content: GlassInnerShadowCanvas(glassSize: size))
-    }
-
-    private static func render<Content: View>(content: Content) -> Image? {
-        let renderer = ImageRenderer(content: content)
-        renderer.scale = UIScreen.main.scale
-        return renderer.uiImage.map { Image(uiImage: $0) }
-    }
-}
-
-private extension Color {
-    func mix(with color: Color, fraction: Double) -> Color {
-        let f = min(max(fraction, 0), 1)
-        let a = UIColor(self), b = UIColor(color)
-        var r1: CGFloat = 0, g1: CGFloat = 0, b1c: CGFloat = 0, a1: CGFloat = 0
-        var r2: CGFloat = 0, g2: CGFloat = 0, b2c: CGFloat = 0, a2: CGFloat = 0
-        a.getRed(&r1, green: &g1, blue: &b1c, alpha: &a1)
-        b.getRed(&r2, green: &g2, blue: &b2c, alpha: &a2)
-        return Color(
-            red: Double(r1 + (r2 - r1) * f),
-            green: Double(g1 + (g2 - g1) * f),
-            blue: Double(b1c + (b2c - b1c) * f),
-            opacity: Double(a1 + (a2 - a1) * f)
-        )
-    }
-}
-
-private struct RefractedTextView: View {
-    let imageName: String
-    let glassSize: CGSize
-    let textScale: CGFloat
-    let textOffset: CGSize
-    let verticalNudge: CGFloat
-    let waterline: CGFloat
-    let ripplePhase: Double
-    let rippleAmplitude: CGFloat
-
-    @Environment(\.displayScale) private var displayScale: CGFloat
-    private let baseImage: CGImage?
-
-    init(
-        imageName: String,
-        glassSize: CGSize,
-        textScale: CGFloat,
-        textOffset: CGSize,
-        verticalNudge: CGFloat,
-        waterline: CGFloat,
-        ripplePhase: Double,
-        rippleAmplitude: CGFloat
-    ) {
-        self.imageName = imageName
-        self.glassSize = glassSize
-        self.textScale = textScale
-        self.textOffset = textOffset
-        self.verticalNudge = verticalNudge
-        self.waterline = waterline
-        self.ripplePhase = ripplePhase
-        self.rippleAmplitude = rippleAmplitude
-        self.baseImage = Self.cgImage(named: imageName)
-    }
-
-    /// This view is recreated on every animation frame, so decoded images are cached by name.
-    private static var imageCache: [String: CGImage] = [:]
-
-    private static func cgImage(named name: String) -> CGImage? {
-        if let cached = imageCache[name] { return cached }
-        let image = UIImage(named: name)?.cgImage
-        imageCache[name] = image
-        return image
-    }
-
-    var body: some View {
-        Canvas { context, _ in
-            guard let baseImage else { return }
-
-            let imgW = CGFloat(baseImage.width)
-            let imgH = CGFloat(baseImage.height)
-
-            let scale = min(glassSize.width / imgW, glassSize.height / imgH)
-            let targetW = imgW * scale
-            let targetH = imgH * scale
-            let fittedRect = CGRect(
-                x: (glassSize.width - targetW) / 2,
-                y: (glassSize.height - targetH) / 2,
-                width: targetW,
-                height: targetH
-            )
-
-            let centerY = glassSize.height / 2
-            let canvasWaterY = centerY + (waterline - textOffset.height - centerY) / max(textScale, 0.0001)
-            let clamped = max(fittedRect.minY, min(canvasWaterY, fittedRect.maxY))
-
-            let px = 1.0 / max(displayScale, 1)
-            let seamYRaw = clamped
-            let seamY = round(seamYRaw / px) * px
-
-            let sliceStep: CGFloat = max(1, px)
-            context.withCGContext { cg in
-                cg.saveGState()
-                let canvasHeight = glassSize.height
-                cg.translateBy(x: 0, y: canvasHeight)
-                cg.scaleBy(x: 1, y: -1)
-
-                let clipHeight = max(fittedRect.maxY - seamY, 0)
-                let invertedClip = CGRect(
-                    x: fittedRect.minX,
-                    y: canvasHeight - fittedRect.maxY,
-                    width: fittedRect.width,
-                    height: clipHeight
-                )
-                cg.clip(to: invertedClip)
-                let baseDrawRect = CGRect(
-                    x: fittedRect.minX,
-                    y: canvasHeight - fittedRect.maxY,
-                    width: fittedRect.width,
-                    height: fittedRect.height
-                )
-
-                let seamRel = max(0, min(1, (seamYRaw - fittedRect.minY) / max(fittedRect.height, 1)))
-                let seamPhase = ripplePhase + Double(seamRel) * 12.0
-                let seamBaseline = CGFloat(sin(seamPhase) * Double(rippleAmplitude))
-
-                var y = max(seamY, fittedRect.minY)
-                while y < fittedRect.maxY {
-                    let bandHeight = min(sliceStep, fittedRect.maxY - y)
-                    let absProg = max(0, min(1, (y - fittedRect.minY) / max(fittedRect.height, 1)))
-                    let phase = ripplePhase + Double(absProg) * 12.0
-                    let offset = CGFloat(sin(phase) * Double(rippleAmplitude)) - seamBaseline
-                    if bandHeight <= 0 { break }
-
-                    let bandClip = CGRect(
-                        x: fittedRect.minX,
-                        y: canvasHeight - (y + bandHeight),
-                        width: fittedRect.width,
-                        height: bandHeight
-                    )
-
-                    cg.saveGState()
-                    cg.clip(to: bandClip)
-                    let drawRect = baseDrawRect.offsetBy(dx: offset, dy: 0)
-                    cg.draw(baseImage, in: drawRect)
-                    cg.restoreGState()
-
-                    y += bandHeight
-                }
-
-                cg.restoreGState()
-            }
-        }
-        .frame(width: glassSize.width, height: glassSize.height)
-        .scaleEffect(textScale)
-        .offset(y: verticalNudge)
-        .offset(x: textOffset.width, y: textOffset.height)
-        .blur(radius: 0.4)
-        .opacity(0.9)
-        .accessibilityHidden(true)
-    }
-}
-
-final class GlassWidthAnalyzer {
-    static let shared = GlassWidthAnalyzer()
-
-    private static let alphaThreshold: UInt8 = 10
-    private let widthFractions: [CGFloat]
-    private let imageHeight: Int
-
-    init(maskImage: CGImage? = UIImage(named: "glass_mask")?.cgImage) {
-        guard let maskImage else {
-            widthFractions = []
-            imageHeight = 0
-            return
-        }
-
-        imageHeight = maskImage.height
-        widthFractions = GlassWidthAnalyzer.computeWidthFractions(from: maskImage, alphaThreshold: Self.alphaThreshold)
-    }
-
-    func widthFraction(atYFraction yFrac: CGFloat) -> CGFloat? {
-        guard !widthFractions.isEmpty, imageHeight > 0 else { return nil }
-        let clamped = max(0, min(1, yFrac))
-        let row = max(0, min(imageHeight - 1, Int(round(clamped * CGFloat(imageHeight - 1)))))
-        return widthFractions[row]
-    }
-
-    static func computeWidthFractions(from image: CGImage, alphaThreshold: UInt8 = GlassWidthAnalyzer.alphaThreshold) -> [CGFloat] {
-        let width = image.width
-        let height = image.height
-        guard let ctx = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: width * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
-            return Array(repeating: 1, count: height)
-        }
-
-        ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        guard let data = ctx.data else {
-            return Array(repeating: 1, count: height)
-        }
-
-        let buffer = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
-        var fractions: [CGFloat] = Array(repeating: 1, count: height)
-
-        for row in 0..<height {
-            let rowOffset = row * width * 4
-            var left: Int?
-            var right: Int?
-
-            for x in 0..<width where buffer[rowOffset + x * 4 + 3] > alphaThreshold {
-                left = x
-                break
-            }
-            if left == nil {
-                fractions[row] = 0
-                continue
-            }
-            for x in stride(from: width - 1, through: 0, by: -1) where buffer[rowOffset + x * 4 + 3] > alphaThreshold {
-                right = x
-                break
-            }
-            if let l = left, let r = right, r >= l {
-                fractions[row] = CGFloat(r - l + 1) / CGFloat(width)
-            } else {
-                fractions[row] = 0
-            }
-        }
-
-        return fractions
-    }
-}
-

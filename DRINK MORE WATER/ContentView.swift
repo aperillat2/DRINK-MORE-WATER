@@ -47,8 +47,14 @@ struct ContentView: View {
     private let sfx = SoundFX.shared
     @Environment(\.notificationScheduler) private var notificationScheduler
 
+    private var goalMet: Bool {
+        viewModel.dailyGoalOz > 0 && viewModel.intakeOz >= viewModel.dailyGoalOz
+    }
+
     private var fillFraction: CGFloat {
-        calculator.fraction(
+        // A met goal always shows a full glass.
+        if goalMet { return maskBounds.fullFraction }
+        return calculator.fraction(
             intakeOz: CGFloat(viewModel.intakeOz),
             goalOz: CGFloat(viewModel.dailyGoalOz),
             bounds: maskBounds,
@@ -88,21 +94,34 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            Color(.systemBlue).ignoresSafeArea()
+            // The glass fills the screen exactly like the splash photo, so it sits in the same
+            // place and size; the label and controls float over the blue above and below it.
+            GeometryReader { proxy in
+                let layout = GlassCanvasLayout(size: proxy.size)
+                ZStack(alignment: .topLeading) {
+                    WaterGlassView(
+                        targetFraction: fillFraction,
+                        frozenPhase: frozenPhase,
+                        surfacePulseStart: surfacePulseStart,
+                        goalMet: goalMet,
+                        layout: layout
+                    )
+                    interactiveGlass(in: layout.glassRect)
+                }
+            }
+            .ignoresSafeArea()
 
-            // Top-to-bottom: intake label, glass (fills the remaining space), controls.
+            // Top-to-bottom: intake label, (the glass shows through the gap), controls.
             VStack(spacing: 0) {
                 Text("\(viewModel.intakeOz) / \(viewModel.dailyGoalOz) \(viewModel.unit.label)")
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.25), radius: 2, x: 0, y: 1)
                     .accessibilityLabel("\(viewModel.intakeOz) of \(viewModel.dailyGoalOz) \(viewModel.unit.spokenName)")
                     .accessibilityIdentifier("intakeLabel")
                     .padding(.top, 56) // leaves room for the gear button above
 
-                GeometryReader { proxy in
-                    interactiveGlass(scale: GlassLayout.scale(toFit: proxy.size))
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                }
+                Spacer(minLength: 0)
 
                 controls
                     .frame(maxWidth: 500) // keep controls a comfortable width on iPad
@@ -324,40 +343,31 @@ private extension ContentView {
         .dynamicTypeSize(.large ... .accessibility1)
     }
 
-    /// The glass drawn at `scale`, laid out in a frame that hugs the visible glass.
-    /// `WaterGlassView` always draws in its fixed 551×722 design space (mostly transparent
-    /// margins), so it's scaled as a whole and allowed to overflow the frame invisibly.
-    func interactiveGlass(scale: CGFloat) -> some View {
-        WaterGlassView(
-            targetFraction: fillFraction,
-            frozenPhase: frozenPhase,
-            surfacePulseStart: surfacePulseStart,
-            hideUnderwaterText: viewModel.intakeOz >= viewModel.dailyGoalOz
-        )
-        .scaleEffect(scale)
-        .frame(
-            width: GlassLayout.visibleSize.width * scale,
-            height: GlassLayout.visibleSize.height * scale
-        )
-        .contentShape(Rectangle())
-        .onTapGesture(perform: handleTap)
-        .allowsHitTesting(walkthroughStep == nil || walkthroughStep == 1)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Water glass")
-        .accessibilityValue("\(viewModel.intakeOz) of \(viewModel.dailyGoalOz) \(viewModel.unit.spokenName)")
-        .accessibilityHint("Adds \(viewModel.ozPerTap) \(viewModel.unit.spokenName)")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction(.default, handleTap)
-        .accessibilityIdentifier("waterGlass")
-        .overlay(alignment: .center) {
-            if walkthroughStep == 1 {
-                HandPointerOverlayView()
-                    .offset(x: -32)
+    /// The tappable area over the glass (`rect` is the glass on screen; the glass itself is
+    /// drawn by `WaterGlassView` as part of the full-screen background).
+    func interactiveGlass(in rect: CGRect) -> some View {
+        Color.clear
+            .frame(width: rect.width, height: rect.height)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: handleTap)
+            .allowsHitTesting(walkthroughStep == nil || walkthroughStep == 1)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Water glass")
+            .accessibilityValue("\(viewModel.intakeOz) of \(viewModel.dailyGoalOz) \(viewModel.unit.spokenName)")
+            .accessibilityHint("Adds \(viewModel.ozPerTap) \(viewModel.unit.spokenName)")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default, handleTap)
+            .accessibilityIdentifier("waterGlass")
+            .overlay(alignment: .center) {
+                if walkthroughStep == 1 {
+                    HandPointerOverlayView()
+                        .offset(x: -32)
+                }
             }
-        }
+            .position(x: rect.midX, y: rect.midY)
     }
 
-    var maskBounds: WaterMaskBounds { .glass }
+    var maskBounds: WaterMaskBounds { .photoGlass }
 }
 
 // MARK: - Notifications

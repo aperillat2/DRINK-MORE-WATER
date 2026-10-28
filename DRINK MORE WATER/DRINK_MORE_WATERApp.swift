@@ -29,6 +29,24 @@ struct DRINK_MORE_WATERApp: App {
             SharedStore.defaults.set(true, forKey: "hasLaunchedBefore")
             SharedStore.defaults.set(true, forKey: "hasCompletedWalkthrough")
         }
+        // "-UITestsIntake 40" starts with 40 already logged today; "-UITestsGoal 160" and
+        // "-UITestsPerTap 2" set the goal and per-tap amount (for UI tests and screenshots).
+        let arguments = ProcessInfo.processInfo.arguments
+        func intArgument(_ name: String) -> Int? {
+            guard let index = arguments.firstIndex(of: name), index + 1 < arguments.count else { return nil }
+            return Int(arguments[index + 1])
+        }
+        if let goal = intArgument("-UITestsGoal") {
+            SharedStore.defaults.set(goal, forKey: WaterIntakeViewModel.Keys.dailyGoal)
+        }
+        if let perTap = intArgument("-UITestsPerTap") {
+            SharedStore.defaults.set(perTap, forKey: WaterIntakeViewModel.Keys.perTap)
+        }
+        if let intake = intArgument("-UITestsIntake") {
+            SharedStore.defaults.set(intake, forKey: WaterIntakeViewModel.Keys.intake)
+            SharedStore.defaults.set(DateUtils.dayString(for: Date(), calendar: .current),
+                                     forKey: WaterIntakeViewModel.Keys.lastIntakeDate)
+        }
         #endif
         // Data moved to the shared App Group store (for the widget) in 1.6; bring 1.5 data along.
         SharedStore.migrateFromStandardDefaultsIfNeeded()
