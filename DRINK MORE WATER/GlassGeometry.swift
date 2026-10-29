@@ -245,10 +245,47 @@ struct WaterHaze: View {
     }
 }
 
-// MARK: - Goal met
+// MARK: - Words on the glass
 
-/// "DAILY GOAL MET!" laid out like the photo's words: same line positions and cap height,
-/// in a condensed bold face close to the photo's lettering, coloured green.
+/// "DRINK MORE WATER" on the glass. In English this is the lettering lifted from the splash photo
+/// (`photoImageName`), so the main screen matches the splash screen exactly; in other languages
+/// it's drawn as translated text in the same place and style.
+struct DrinkMoreWaterWords: View {
+    let transform: PhotoTransform
+    let size: CGSize
+    /// The photo lettering for this target (`glass_words` in the app, `widget_glass_words` in the widget).
+    let photoImageName: String
+
+    /// Whether the app is running in English, where the photo lettering is used.
+    static var usesPhotoLettering: Bool {
+        Bundle.main.preferredLocalizations.first?.hasPrefix("en") ?? true
+    }
+
+    var body: some View {
+        if Self.usesPhotoLettering {
+            let rect = transform.rect(GlassArt.wordsRect)
+            Image(photoImageName)
+                .resizable()
+                .frame(width: rect.width, height: rect.height)
+                .position(x: rect.midX, y: rect.midY)
+                .frame(width: size.width, height: size.height, alignment: .topLeading)
+        } else {
+            // Each word is one line on the glass, so translations should stay short.
+            GlassWordLines(
+                lines: [
+                    LocalizedStringResource("DRINK", comment: "Line 1 of 3 written on the water glass (\"DRINK MORE WATER\"). The three lines are read together as one phrase; reorder words between lines as needed. Keep each line very short."),
+                    LocalizedStringResource("MORE", comment: "Line 2 of 3 written on the water glass (\"DRINK MORE WATER\"). The three lines are read together as one phrase; reorder words between lines as needed. Keep each line very short."),
+                    LocalizedStringResource("WATER", comment: "Line 3 of 3 written on the water glass (\"DRINK MORE WATER\"). The three lines are read together as one phrase; reorder words between lines as needed. Keep each line very short."),
+                ],
+                color: .white,
+                transform: transform,
+                size: size
+            )
+        }
+    }
+}
+
+/// "DAILY GOAL MET!" in place of "DRINK MORE WATER", coloured green.
 struct GoalMetWords: View {
     let transform: PhotoTransform
     let size: CGSize
@@ -257,16 +294,50 @@ struct GoalMetWords: View {
     static let goalGreen = Color(red: 0.22, green: 0.88, blue: 0.42)
 
     var body: some View {
-        let lines = ["DAILY", "GOAL", "MET!"]
+        // Each word is one line on the glass, so translations should stay short.
+        GlassWordLines(
+            lines: [
+                LocalizedStringResource("DAILY", comment: "Goal met, line 1 of 3 on the glass (\"DAILY GOAL MET!\")"),
+                LocalizedStringResource("GOAL", comment: "Goal met, line 2 of 3 on the glass"),
+                LocalizedStringResource("MET!", comment: "Goal met, line 3 of 3 on the glass"),
+            ],
+            color: Self.goalGreen,
+            transform: transform,
+            size: size
+        )
+    }
+}
+
+/// Three lines of text laid out like the photo's words: same line positions and cap height,
+/// in a condensed bold face close to the photo's lettering.
+struct GlassWordLines: View {
+    let lines: [LocalizedStringResource]
+    let color: Color
+    let transform: PhotoTransform
+    let size: CGSize
+
+    /// The widest a line may be (photo pixels) before it shrinks to stay inside the glass walls.
+    private static let maxLineWidth: CGFloat = 420
+
+    /// Chinese, Japanese and Korean characters fill nearly the whole em square, much taller than
+    /// Latin capitals, so they're drawn smaller to keep the lines from touching.
+    private static var fontScale: CGFloat {
+        let language = Bundle.main.preferredLocalizations.first ?? ""
+        return ["ja", "ko", "zh"].contains { language.hasPrefix($0) } ? 0.8 : 1
+    }
+
+    var body: some View {
         // SF's cap height is about 0.705 of the point size.
-        let fontSize = GlassArt.wordCapHeight / 0.705 * transform.scale
+        let fontSize = GlassArt.wordCapHeight / 0.705 * Self.fontScale * transform.scale
         ZStack(alignment: .topLeading) {
-            ForEach(Array(zip(lines.indices, lines)), id: \.0) { index, line in
+            ForEach(lines.indices, id: \.self) { index in
                 let center = transform.point(CGPoint(x: GlassArt.wordsCenterX, y: GlassArt.wordLineCenters[index]))
-                Text(line)
+                Text(lines[index])
                     .font(.system(size: fontSize, weight: .bold).width(.condensed))
-                    .foregroundStyle(Self.goalGreen)
-                    .fixedSize()
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.4)
+                    .frame(width: Self.maxLineWidth * transform.scale)
                     .position(center)
             }
         }

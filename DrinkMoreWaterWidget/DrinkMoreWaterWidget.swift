@@ -332,13 +332,13 @@ struct WidgetGlassView: View {
             .frame(width: size.width, height: size.height, alignment: .topLeading)
     }
 
-    /// "DRINK MORE WATER" from the photo, or the green "DAILY GOAL MET!" once the goal is met.
+    /// "DRINK MORE WATER", or the green "DAILY GOAL MET!" once the goal is met.
     @ViewBuilder
     private func words(transform: PhotoTransform, size: CGSize) -> some View {
         if snapshot.isGoalMet {
             GoalMetWords(transform: transform, size: size)
         } else {
-            placed("widget_glass_words", in: transform.rect(GlassArt.wordsRect), size: size)
+            DrinkMoreWaterWords(transform: transform, size: size, photoImageName: "widget_glass_words")
         }
     }
 }

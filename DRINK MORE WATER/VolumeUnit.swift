@@ -9,8 +9,13 @@ nonisolated enum VolumeUnit: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
-    /// Short label shown next to amounts (e.g. "80 oz").
-    var label: String { rawValue }
+    /// Short label shown next to amounts (e.g. "80 oz"), translated per language.
+    var label: String {
+        switch self {
+        case .oz: return String(localized: "oz", comment: "Abbreviation for fluid ounces")
+        case .ml: return String(localized: "ml", comment: "Abbreviation for milliliters")
+        }
+    }
 
     /// Full unit name for VoiceOver, which would otherwise read "oz" letter by letter.
     var spokenName: String {

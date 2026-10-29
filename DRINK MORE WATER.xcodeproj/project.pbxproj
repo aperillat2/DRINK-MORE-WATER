@@ -75,6 +75,7 @@
 				DateUtils.swift,
 				FillFractionCalculator.swift,
 				GlassGeometry.swift,
+				Localizable.xcstrings,
 				NotificationScheduler.swift,
 				SharedStore.swift,
 				VolumeUnit.swift,
@@ -308,6 +309,14 @@
 			knownRegions = (
 				en,
 				Base,
+				es,
+				fr,
+				de,
+				it,
+				"pt-BR",
+				ja,
+				ko,
+				"zh-Hans",
 			);
 			mainGroup = 70B02DCA2EA94941002696A3;
 			minimizedProjectReferenceProxies = 1;

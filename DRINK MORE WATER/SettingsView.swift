@@ -67,7 +67,7 @@ struct NotificationSettingsView: View {
                         // Explicit none option (empty string means no sound)
                         Text("None").tag("")
                         ForEach(availableSoundsBaseNames(), id: \.self) { name in
-                            Text(name).tag(name)
+                            Text(Self.soundDisplayName(name)).tag(name)
                         }
                     }
                 }
@@ -159,6 +159,16 @@ struct NotificationSettingsView: View {
             return hours == 1 ? String(localized: "Every hour") : String(localized: "Every \(hours) hours")
         }
         return String(localized: "Every \(minutes) minutes")
+    }
+
+    /// Name shown for a sound file. The stored value stays the file name; only the label is translated.
+    static func soundDisplayName(_ fileName: String) -> String {
+        switch fileName {
+        case "drink more water": return String(localized: "drink more water", comment: "Reminder sound name")
+        case "water pour 1": return String(localized: "water pour 1", comment: "Reminder sound name")
+        case "water pour 2": return String(localized: "water pour 2", comment: "Reminder sound name")
+        default: return fileName
+        }
     }
 
     private func availableSoundsBaseNames() -> [String] {

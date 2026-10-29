@@ -145,10 +145,10 @@ struct WaterGlassView: View {
             .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
     }
 
-    /// "DRINK MORE WATER" from the splash photo, or "DAILY GOAL MET!" in the same style.
+    /// "DRINK MORE WATER", or "DAILY GOAL MET!" in the same style.
     private var words: some View {
         ZStack {
-            placed("glass_words", in: layout.rect(GlassArt.wordsRect))
+            DrinkMoreWaterWords(transform: layout.transform, size: layout.size, photoImageName: "glass_words")
                 .opacity(goalMet ? 0 : 1)
             GoalMetWords(transform: layout.transform, size: layout.size)
                 .opacity(goalMet ? 1 : 0)
