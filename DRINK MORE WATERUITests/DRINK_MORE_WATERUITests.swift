@@ -82,9 +82,12 @@ final class DRINK_MORE_WATERUITests: XCTestCase {
 
 private extension DRINK_MORE_WATERUITests {
     /// Launches with all saved state wiped and the splash/walkthrough skipped.
+    /// The app is forced into US English, since these tests check English labels; otherwise they'd
+    /// fail whenever the scheme's App Language or the simulator is set to another language.
     func launchFreshApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["-UITestsSkipSplash", "-UITestsResetState"]
+        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         dismissNotificationPermissionAlertIfPresent()
         return app
