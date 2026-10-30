@@ -121,6 +121,66 @@
         }
       }
     },
+    "NSHealthShareUsageDescription" : {
+      "comment" : "Privacy - Health Share Usage Description",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "machine_translated",
+            "value" : "Die App liest deine Gesundheitsdaten nicht. Sie sichert nur das Wasser, das du einträgst, in der Health-App."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The app doesn't read your health data. It only saves the water you log to the Health app."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "machine_translated",
+            "value" : "La app no lee tus datos de salud. Solo guarda en la app Salud el agua que registras."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "machine_translated",
+            "value" : "L’app ne lit pas vos données de santé. Elle enregistre seulement l’eau que vous consignez dans l’app Santé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "machine_translated",
+            "value" : "L’app non legge i tuoi dati sanitari. Salva solo nell’app Salute l’acqua che registri."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "machine_translated",
+            "value" : "このアプリがヘルスケアのデータを読み取ることはありません。記録した水分をヘルスケアAppに保存するだけです。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "machine_translated",
+            "value" : "이 앱은 건강 데이터를 읽지 않습니다. 기록한 물을 건강 앱에 저장하기만 합니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "machine_translated",
+            "value" : "O app não lê seus dados de saúde. Ele só salva no app Saúde a água que você registra."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "machine_translated",
+            "value" : "本App不会读取你的健康数据，只会将你记录的饮水存储到“健康”App中。"
+          }
+        }
+      }
+    },
     "NSHealthUpdateUsageDescription" : {
       "comment" : "Privacy - Health Update Usage Description",
       "extractionState" : "extracted_with_value",
