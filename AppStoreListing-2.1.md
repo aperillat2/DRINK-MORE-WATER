@@ -61,7 +61,7 @@ Available in English, Spanish, French, German, Italian, Portuguese, Japanese, Ko
 ```
 Our biggest update yet!
 
-• A brand-new glass: a real photographed glass that fills as you drink, with a moving water surface and words that ripple under the water
+• A brand-new glass: a photorealistic glass that fills as you drink, with a moving water surface and words that ripple under the water
 • Home Screen widgets in three sizes that match the new glass
 • Lock Screen widgets: tap to log a drink without unlocking
 • Log a drink right from a reminder notification
@@ -126,7 +126,7 @@ Disponible en español, inglés, francés, alemán, italiano, portugués, japon�
 ```
 ¡Nuestra mayor actualización hasta ahora!
 
-• Un vaso totalmente nuevo: un vaso real fotografiado que se llena a medida que bebes, con la superficie del agua en movimiento y palabras que ondulan bajo el agua
+• Un vaso totalmente nuevo: un vaso fotorrealista que se llena a medida que bebes, con la superficie del agua en movimiento y palabras que ondulan bajo el agua
 • Widgets para la pantalla de inicio en tres tamaños, a juego con el nuevo vaso
 • Widgets para la pantalla bloqueada: toca para registrar una bebida sin desbloquear
 • Registra una bebida directamente desde la notificación del recordatorio
@@ -191,7 +191,7 @@ Disponible en français, anglais, espagnol, allemand, italien, portugais, japona
 ```
 Notre plus grande mise à jour à ce jour !
 
-• Un tout nouveau verre : un vrai verre photographié qui se remplit à mesure que vous buvez, avec une surface d’eau en mouvement et des mots qui ondulent sous l’eau
+• Un tout nouveau verre : un verre photoréaliste qui se remplit à mesure que vous buvez, avec une surface d’eau en mouvement et des mots qui ondulent sous l’eau
 • Widgets pour l’écran d’accueil en trois tailles, assortis au nouveau verre
 • Widgets pour l’écran verrouillé : touchez pour enregistrer une boisson sans déverrouiller
 • Enregistrez une boisson directement depuis la notification de rappel
@@ -256,7 +256,7 @@ Verfügbar auf Deutsch, Englisch, Spanisch, Französisch, Italienisch, Portugies
 ```
 Unser bisher größtes Update!
 
-• Ein ganz neues Glas: ein echtes fotografiertes Glas, das sich beim Trinken füllt – mit bewegter Wasseroberfläche und Worten, die unter Wasser schimmern
+• Ein ganz neues Glas: ein fotorealistisches Glas, das sich beim Trinken füllt – mit bewegter Wasseroberfläche und Worten, die unter Wasser schimmern
 • Widgets für den Home-Bildschirm in drei Größen, passend zum neuen Glas
 • Widgets für den Sperrbildschirm: tippen und ein Getränk eintragen, ohne zu entsperren
 • Trage ein Getränk direkt aus der Erinnerungsmitteilung ein
@@ -321,7 +321,7 @@ Disponibile in italiano, inglese, spagnolo, francese, tedesco, portoghese, giapp
 ```
 Il nostro aggiornamento più grande di sempre!
 
-• Un bicchiere tutto nuovo: un vero bicchiere fotografato che si riempie mentre bevi, con la superficie dell’acqua in movimento e parole che ondeggiano sott’acqua
+• Un bicchiere tutto nuovo: un bicchiere fotorealistico che si riempie mentre bevi, con la superficie dell’acqua in movimento e parole che ondeggiano sott’acqua
 • Widget per la schermata Home in tre dimensioni, abbinati al nuovo bicchiere
 • Widget per la schermata di blocco: tocca per registrare un bicchiere senza sbloccare
 • Registra un bicchiere direttamente dalla notifica del promemoria
@@ -386,7 +386,7 @@ Disponível em português, inglês, espanhol, francês, alemão, italiano, japon
 ```
 Nossa maior atualização até agora!
 
-• Um copo totalmente novo: um copo real fotografado que enche conforme você bebe, com a superfície da água em movimento e palavras que ondulam embaixo d’água
+• Um copo totalmente novo: um copo fotorrealista que enche conforme você bebe, com a superfície da água em movimento e palavras que ondulam embaixo d’água
 • Widgets para a Tela de Início em três tamanhos, combinando com o novo copo
 • Widgets para a Tela Bloqueada: toque para registrar uma bebida sem desbloquear
 • Registre uma bebida direto da notificação do lembrete
@@ -451,7 +451,7 @@ Nossa maior atualização até agora!
 ```
 これまでで最大のアップデートです！
 
-・まったく新しいグラス：実際に撮影したグラスが飲むたびに満たされ、水面が揺れ、水中の文字がゆらめきます
+・まったく新しいグラス：写真のようにリアルなグラスが飲むたびに満たされ、水面が揺れ、水中の文字がゆらめきます
 ・新しいグラスに合わせた、3サイズのホーム画面ウィジェット
 ・ロック画面ウィジェット：ロックを解除せずにタップで1杯を記録
 ・リマインダーの通知から直接1杯を記録
@@ -516,7 +516,7 @@ Nossa maior atualização até agora!
 ```
 지금까지 중 가장 큰 업데이트입니다!
 
-• 완전히 새로운 컵: 실제로 촬영한 컵이 물을 마실 때마다 채워지고, 수면이 움직이며 물속 글자가 일렁입니다
+• 완전히 새로운 컵: 사진처럼 사실적인 컵이 물을 마실 때마다 채워지고, 수면이 움직이며 물속 글자가 일렁입니다
 • 새로운 컵에 맞춘 세 가지 크기의 홈 화면 위젯
 • 잠금 화면 위젯: 잠금을 해제하지 않고 탭해서 한 잔 기록
 • 리마인더 알림에서 바로 한 잔 기록
@@ -581,7 +581,7 @@ Nossa maior atualização até agora!
 ```
 迄今为止最大的一次更新！
 
-• 全新水杯：真实拍摄的水杯会随着你喝水逐渐装满，水面轻轻晃动，水下的文字也会随波荡漾
+• 全新水杯：逼真的水杯会随着你喝水逐渐装满，水面轻轻晃动，水下的文字也会随波荡漾
 • 与新水杯风格一致的三种尺寸主屏幕小组件
 • 锁定屏幕小组件：无需解锁，轻点即可记录一杯
 • 直接在提醒通知中记录一杯
