@@ -28,8 +28,11 @@ struct NotificationSettingsView: View {
                 Section(header: Text("General")) {
                     LabeledContent("Units") {
                         Picker("Units", selection: $volumeUnit) {
+                            // Spoken in full; VoiceOver may otherwise spell out "oz"/"ml".
                             Text("oz").tag(VolumeUnit.oz)
+                                .accessibilityLabel(VolumeUnit.oz.spokenName)
                             Text("ml").tag(VolumeUnit.ml)
+                                .accessibilityLabel(VolumeUnit.ml.spokenName)
                         }
                         .pickerStyle(.segmented)
                         .fixedSize()

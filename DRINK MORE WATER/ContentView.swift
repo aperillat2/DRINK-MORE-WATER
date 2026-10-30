@@ -72,6 +72,7 @@ struct ContentView: View {
         if !muteTapSound { sfx.playSplash() }
         viewModel.intakeOz = step.newValue
         viewModel.recordDrink()
+        announceProgress(reachedGoal: step.reachedGoal)
 
         if step.reachedGoal {
             viewModel.markGoalMetToday()
@@ -82,6 +83,14 @@ struct ContentView: View {
         }
         // Goal met: skips the rest of today. Otherwise: next reminder one interval from now.
         refreshNotifications()
+    }
+
+    /// Tells VoiceOver users the new total after a tap (the glass's value doesn't re-announce itself).
+    private func announceProgress(reachedGoal: Bool) {
+        let message = reachedGoal
+            ? String(localized: "Goal met!")
+            : String(localized: "\(viewModel.intakeOz) of \(viewModel.dailyGoalOz) \(viewModel.unit.spokenName)")
+        AccessibilityNotification.Announcement(message).post()
     }
 
     var body: some View {
@@ -311,6 +320,7 @@ private extension ContentView {
         VStack(spacing: 16) {
             Text("Water Added Per Tap")
                 .font(.title2)
+                .accessibilityAddTraits(.isHeader)
             Text("\(viewModel.ozPerTap) \(viewModel.unit.label)")
                 .font(.title.weight(.bold))
                 .accessibilityHidden(true) // announced by the slider
@@ -346,7 +356,8 @@ private extension ContentView {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Water glass")
             .accessibilityValue("\(viewModel.intakeOz) of \(viewModel.dailyGoalOz) \(viewModel.unit.spokenName)")
-            .accessibilityHint("Adds \(viewModel.ozPerTap) \(viewModel.unit.spokenName)")
+            // Once full, tapping adds nothing, so say so instead of "Adds …".
+            .accessibilityHint(goalMet ? Text("Goal met!") : Text("Adds \(viewModel.ozPerTap) \(viewModel.unit.spokenName)"))
             .accessibilityAddTraits(.isButton)
             .accessibilityAction(.default, handleTap)
             .accessibilityIdentifier("waterGlass")

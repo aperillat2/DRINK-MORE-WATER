@@ -8,6 +8,9 @@ struct WalkthroughOverlay: View {
     /// Called when the user skips or finishes.
     var onFinish: () -> Void
 
+    /// Moves VoiceOver to each step's title, so the new step is read after tapping Next.
+    @AccessibilityFocusState private var titleFocused: Bool
+
     var body: some View {
         if let current = step, let info = info(for: current) {
             GeometryReader { proxy in
@@ -27,6 +30,8 @@ struct WalkthroughOverlay: View {
                                 .lineLimit(nil)
                                 .frame(width: textWidth, alignment: .center)
                                 .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityAddTraits(.isHeader)
+                                .accessibilityFocused($titleFocused)
 
                             Text(info.detail)
                                 .multilineTextAlignment(.center)
@@ -63,6 +68,8 @@ struct WalkthroughOverlay: View {
                 .frame(width: proxy.size.width, height: proxy.size.height)
                 .accessibilityAddTraits(.isModal)
                 .transition(.opacity)
+                .onAppear { titleFocused = true }
+                .onChange(of: current) { _, _ in titleFocused = true }
             }
         }
     }
