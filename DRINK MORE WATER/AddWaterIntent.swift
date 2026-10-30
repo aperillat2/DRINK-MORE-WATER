@@ -29,17 +29,21 @@ nonisolated enum WaterLogger {
     @discardableResult
     static func logOneTap() async -> Bool {
         // The view model is main-actor isolated; callers here aren't, so hop explicitly.
-        let update = await MainActor.run { () -> (goalMet: Bool, lastDrink: Date?)? in
+        let update = await MainActor.run {
+            () -> (goalMet: Bool, lastDrink: Date?, added: Int, unit: VolumeUnit)? in
             let model = WaterIntakeViewModel(defaults: SharedStore.defaults)
             model.resetIfNeeded()
             guard let step = model.nextIntakeStep() else { return nil }
+            // Less than a full tap when the goal caps it.
+            let added = step.newValue - model.intakeOz
             model.intakeOz = step.newValue
             model.recordDrink()
             if step.reachedGoal { model.markGoalMetToday() }
-            return (model.isGoalMetToday, model.lastDrinkToday)
+            return (model.isGoalMetToday, model.lastDrinkToday, added, model.unit)
         }
 
         if let update {
+            await HealthSync.log(update.added, unit: update.unit, at: update.lastDrink ?? Date())
             // Reminders: skip the rest of today once the goal is met; otherwise the next one
             // comes one interval after this drink. Wait for it, since the process may be
             // suspended right after this returns.

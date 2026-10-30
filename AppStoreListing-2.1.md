@@ -50,6 +50,7 @@ LOG FROM ANYWHERE
 • Lock Screen widgets: tap to log a drink without unlocking
 • A control for Control Center and the Action button
 • Works with Shortcuts
+• Optionally saves each drink to Apple Health
 
 PRIVATE BY DESIGN
 No account, no ads, no tracking. Your data stays on your device.
@@ -66,6 +67,7 @@ Our biggest update yet!
 • Lock Screen widgets: tap to log a drink without unlocking
 • Log a drink right from a reminder notification
 • Add water from Control Center or the Action button
+• New: save your drinks to Apple Health (optional)
 • Track your water in ounces or milliliters
 • A new app icon and splash screen
 • Now available in Spanish, French, German, Italian, Brazilian Portuguese, Japanese, Korean and Simplified Chinese, including the words on the glass
@@ -115,6 +117,7 @@ REGISTRA DESDE CUALQUIER LUGAR
 • Widgets para la pantalla bloqueada: toca para registrar una bebida sin desbloquear
 • Un control para el centro de control y el botón de acción
 • Compatible con Atajos
+• Opcional: guarda cada bebida en la app Salud
 
 PRIVADA POR DISEÑO
 Sin cuenta, sin anuncios y sin rastreo. Tus datos se quedan en tu dispositivo.
@@ -131,6 +134,7 @@ Disponible en español, inglés, francés, alemán, italiano, portugués, japon�
 • Widgets para la pantalla bloqueada: toca para registrar una bebida sin desbloquear
 • Registra una bebida directamente desde la notificación del recordatorio
 • Añade agua desde el centro de control o el botón de acción
+• Novedad: guarda tus bebidas en la app Salud (opcional)
 • Registra el agua en onzas o mililitros
 • Nuevo icono y nueva pantalla de inicio de la app
 • Ahora disponible en español, francés, alemán, italiano, portugués de Brasil, japonés, coreano y chino simplificado, incluidas las palabras del vaso
@@ -180,6 +184,7 @@ ENREGISTREZ OÙ QUE VOUS SOYEZ
 • Widgets pour l’écran verrouillé : touchez pour enregistrer une boisson sans déverrouiller
 • Une commande pour le centre de contrôle et le bouton Action
 • Compatible avec Raccourcis
+• En option : enregistrez chaque boisson dans l’app Santé
 
 CONFIDENTIALITÉ AVANT TOUT
 Aucun compte, aucune publicité, aucun suivi. Vos données restent sur votre appareil.
@@ -196,6 +201,7 @@ Notre plus grande mise à jour à ce jour !
 • Widgets pour l’écran verrouillé : touchez pour enregistrer une boisson sans déverrouiller
 • Enregistrez une boisson directement depuis la notification de rappel
 • Ajoutez de l’eau depuis le centre de contrôle ou le bouton Action
+• Nouveau : enregistrez vos boissons dans l’app Santé (en option)
 • Suivez votre consommation en onces ou en millilitres
 • Une nouvelle icône et un nouvel écran de démarrage
 • Désormais disponible en français, espagnol, allemand, italien, portugais (Brésil), japonais, coréen et chinois simplifié, y compris les mots sur le verre
@@ -245,6 +251,7 @@ EINTRAGEN VON ÜBERALL
 • Widgets für den Sperrbildschirm: tippen und eintragen, ohne zu entsperren
 • Eine Steuerung für das Kontrollzentrum und die Aktionstaste
 • Funktioniert mit Kurzbefehlen
+• Optional: Jedes Getränk auch in der Health-App sichern
 
 PRIVATSPHÄRE INKLUSIVE
 Kein Account, keine Werbung, kein Tracking. Deine Daten bleiben auf deinem Gerät.
@@ -261,6 +268,7 @@ Unser bisher größtes Update!
 • Widgets für den Sperrbildschirm: tippen und ein Getränk eintragen, ohne zu entsperren
 • Trage ein Getränk direkt aus der Erinnerungsmitteilung ein
 • Füge Wasser über das Kontrollzentrum oder die Aktionstaste hinzu
+• Neu: Sichere deine Getränke optional in der Health-App
 • Erfasse dein Wasser in Unzen oder Millilitern
 • Neues App-Symbol und neuer Startbildschirm
 • Jetzt auf Deutsch, Spanisch, Französisch, Italienisch, brasilianischem Portugiesisch, Japanisch, Koreanisch und vereinfachtem Chinesisch – auch die Worte auf dem Glas
@@ -310,6 +318,7 @@ REGISTRA DA OVUNQUE
 • Widget per la schermata di blocco: tocca per registrare senza sbloccare
 • Un controllo per Centro di Controllo e il tasto Azione
 • Compatibile con Comandi Rapidi
+• Facoltativo: salva ogni bevuta nell’app Salute
 
 PRIVACY AL PRIMO POSTO
 Nessun account, nessuna pubblicità, nessun tracciamento. I tuoi dati restano sul tuo dispositivo.
@@ -326,6 +335,7 @@ Il nostro aggiornamento più grande di sempre!
 • Widget per la schermata di blocco: tocca per registrare un bicchiere senza sbloccare
 • Registra un bicchiere direttamente dalla notifica del promemoria
 • Aggiungi acqua da Centro di Controllo o con il tasto Azione
+• Novità: salva le tue bevute nell’app Salute (facoltativo)
 • Registra l’acqua in once o millilitri
 • Nuova icona e nuova schermata di avvio
 • Ora disponibile in italiano, spagnolo, francese, tedesco, portoghese brasiliano, giapponese, coreano e cinese semplificato, comprese le parole sul bicchiere
@@ -375,6 +385,7 @@ REGISTRE DE QUALQUER LUGAR
 • Widgets para a Tela Bloqueada: toque para registrar sem desbloquear
 • Um controle para a Central de Controle e o botão de Ação
 • Funciona com o app Atalhos
+• Opcional: salve cada bebida no app Saúde
 
 PRIVACIDADE EM PRIMEIRO LUGAR
 Sem conta, sem anúncios, sem rastreamento. Seus dados ficam no seu dispositivo.
@@ -391,6 +402,7 @@ Nossa maior atualização até agora!
 • Widgets para a Tela Bloqueada: toque para registrar uma bebida sem desbloquear
 • Registre uma bebida direto da notificação do lembrete
 • Adicione água pela Central de Controle ou pelo botão de Ação
+• Novidade: salve suas bebidas no app Saúde (opcional)
 • Registre sua água em onças ou mililitros
 • Novo ícone e nova tela de abertura
 • Agora disponível em português, espanhol, francês, alemão, italiano, japonês, coreano e chinês simplificado, incluindo as palavras no copo
@@ -440,6 +452,7 @@ Nossa maior atualização até agora!
 ・ロック画面ウィジェット：ロックを解除せずにタップで記録
 ・コントロールセンターとアクションボタン用のコントロール
 ・ショートカットに対応
+・記録した水分をヘルスケアAppにも保存可能（オプション）
 
 プライバシーを大切に
 アカウント登録、広告、トラッキングは一切なし。データはデバイス内に保存されます。
@@ -456,6 +469,7 @@ Nossa maior atualização até agora!
 ・ロック画面ウィジェット：ロックを解除せずにタップで1杯を記録
 ・リマインダーの通知から直接1杯を記録
 ・コントロールセンターやアクションボタンから水を追加
+・新機能：記録した水分をヘルスケアAppに保存（オプション）
 ・オンスとミリリットルの両方で記録可能
 ・新しいアプリアイコンと起動画面
 ・日本語、スペイン語、フランス語、ドイツ語、イタリア語、ポルトガル語（ブラジル）、韓国語、簡体字中国語に対応。グラスの文字も各言語で表示
@@ -505,6 +519,7 @@ Nossa maior atualização até agora!
 • 잠금 화면 위젯: 잠금을 해제하지 않고 탭해서 기록
 • 제어 센터와 동작 버튼용 컨트롤
 • 단축어 지원
+• 기록한 물을 건강 앱에도 저장 가능(선택 사항)
 
 개인정보 보호
 계정, 광고, 추적이 없습니다. 데이터는 기기에만 저장됩니다.
@@ -521,6 +536,7 @@ Nossa maior atualização até agora!
 • 잠금 화면 위젯: 잠금을 해제하지 않고 탭해서 한 잔 기록
 • 리마인더 알림에서 바로 한 잔 기록
 • 제어 센터나 동작 버튼으로 물 추가
+• 새 기능: 기록한 물을 건강 앱에 저장(선택 사항)
 • 온스 또는 밀리리터로 기록
 • 새로운 앱 아이콘과 시작 화면
 • 한국어, 스페인어, 프랑스어, 독일어, 이탈리아어, 포르투갈어(브라질), 일본어, 중국어(간체) 지원. 컵에 적힌 문구도 각 언어로 표시
@@ -570,6 +586,7 @@ Nossa maior atualização até agora!
 • 锁定屏幕小组件：无需解锁，轻点即可记录
 • 适用于控制中心和操作按钮的控制
 • 支持快捷指令
+• 可选：将每次饮水存储到“健康”App
 
 注重隐私
 无需账户，没有广告，不做追踪。你的数据只保存在你的设备上。
@@ -586,6 +603,7 @@ Nossa maior atualização até agora!
 • 锁定屏幕小组件：无需解锁，轻点即可记录一杯
 • 直接在提醒通知中记录一杯
 • 通过控制中心或操作按钮添加饮水
+• 新功能：可将饮水记录存储到“健康”App（可选）
 • 可用盎司或毫升记录饮水
 • 全新 App 图标和启动画面
 • 现已支持简体中文、西班牙语、法语、德语、意大利语、巴西葡萄牙语、日语和韩语，水杯上的文字也会以你的语言显示

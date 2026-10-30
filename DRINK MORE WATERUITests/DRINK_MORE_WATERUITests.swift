@@ -46,7 +46,8 @@ final class DRINK_MORE_WATERUITests: XCTestCase {
         XCTAssertTrue(intakeLabel.waitForLabel("0 of 80 ounces", timeout: 3))
 
         openSettings(in: app)
-        let mlSegment = app.segmentedControls["volumeUnitPicker"].buttons["ml"]
+        // The segment shows "ml" but is labeled in full for VoiceOver.
+        let mlSegment = app.segmentedControls["volumeUnitPicker"].buttons["milliliters"]
         XCTAssertTrue(mlSegment.waitForExistence(timeout: 3), "Units picker not found in Settings")
         mlSegment.tap()
         app.buttons["Apply"].tap()
@@ -67,7 +68,12 @@ final class DRINK_MORE_WATERUITests: XCTestCase {
         XCTAssertTrue(intakeLabel.waitForLabel("20 of 80 ounces", timeout: 3))
 
         openSettings(in: app)
-        app.buttons["Reset today's intake"].tap()
+        // The button is near the bottom of the list, so it may be off-screen at first.
+        let reset = app.buttons["Reset today's intake"]
+        for _ in 0..<3 where !reset.isHittable {
+            app.swipeUp()
+        }
+        reset.tap()
         let resetButton = app.alerts.buttons["Reset"]
         XCTAssertTrue(resetButton.waitForExistence(timeout: 3), "Reset confirmation did not appear")
         resetButton.tap()

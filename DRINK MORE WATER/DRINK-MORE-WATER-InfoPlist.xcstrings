@@ -120,6 +120,66 @@
           }
         }
       }
+    },
+    "NSHealthUpdateUsageDescription" : {
+      "comment" : "Privacy - Health Update Usage Description",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "machine_translated",
+            "value" : "Jedes Getränk, das du einträgst, wird in der Health-App gesichert. Die App liest niemals deine Gesundheitsdaten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Each drink you log is saved as Water in the Health app. The app never reads your health data."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "machine_translated",
+            "value" : "Cada bebida que registras se guarda en la app Salud. La app nunca lee tus datos de salud."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "machine_translated",
+            "value" : "Chaque boisson enregistrée est ajoutée à l’app Santé. L’app ne lit jamais vos données de santé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "machine_translated",
+            "value" : "Ogni bevuta che registri viene salvata nell’app Salute. L’app non legge mai i tuoi dati sanitari."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "machine_translated",
+            "value" : "記録した水分はヘルスケアAppに保存されます。このアプリがヘルスケアのデータを読み取ることはありません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "machine_translated",
+            "value" : "기록한 물은 건강 앱에 저장됩니다. 이 앱은 건강 데이터를 읽지 않습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "machine_translated",
+            "value" : "Toda água que você registra é salva no app Saúde. O app nunca lê seus dados de saúde."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "machine_translated",
+            "value" : "你记录的每次饮水都会存储到“健康”App中。本App绝不会读取你的健康数据。"
+          }
+        }
+      }
     }
   },
   "version" : "1.3"

@@ -70,8 +70,13 @@ struct ContentView: View {
         surfacePulseStart = Date.timeIntervalSinceReferenceDate
         haptics.impactLight()
         if !muteTapSound { sfx.playSplash() }
+        // Less than a full tap when the goal caps it.
+        let added = step.newValue - viewModel.intakeOz
         viewModel.intakeOz = step.newValue
         viewModel.recordDrink()
+        let unit = viewModel.unit
+        let drankAt = viewModel.lastDrinkToday ?? Date()
+        Task { await HealthSync.log(added, unit: unit, at: drankAt) }
         announceProgress(reachedGoal: step.reachedGoal)
 
         if step.reachedGoal {
@@ -177,6 +182,7 @@ struct ContentView: View {
                 onResetToday: {
                     viewModel.resetToday()
                     refreshNotifications()
+                    Task { await HealthSync.deleteDrinks(onDayOf: Date()) }
                 },
                 onShowHelp: {
                     walkthroughStep = 1
@@ -220,6 +226,8 @@ struct ContentView: View {
                 notificationScheduler.clearBadge()
                 // They may have changed notification permission in iOS Settings meanwhile.
                 Task { await refreshNotificationsDenied() }
+                // Retry any drinks the widget or an earlier attempt couldn't save to Health.
+                Task { await HealthSync.savePending() }
             } else {
                 let t = Date.timeIntervalSinceReferenceDate
                 frozenPhase = WaterGlassView.rippleSeed + t * WaterGlassView.waveSpeed

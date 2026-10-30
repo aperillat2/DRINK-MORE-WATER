@@ -21,6 +21,9 @@ struct NotificationSettingsView: View {
     /// The confirmation is presented from this sheet: on iOS 17 an alert attached to the
     /// view underneath an open sheet never appears.
     @State private var showResetConfirmation = false
+    @AppStorage(HealthSync.Keys.enabled, store: SharedStore.defaults) private var saveToHealth = false
+    /// True when access is turned off in the Health app, so saving can't work.
+    @State private var healthDenied = false
 
     var body: some View {
         NavigationStack {
@@ -39,6 +42,19 @@ struct NotificationSettingsView: View {
                         .accessibilityIdentifier("volumeUnitPicker")
                     }
                     Toggle("Mute Add Water Sound", isOn: $muteTapSound)
+                }
+
+                if HealthSync.isAvailable {
+                    Section {
+                        Toggle("Save to Apple Health", isOn: saveToHealthBinding)
+                            .accessibilityIdentifier("saveToHealthToggle")
+                    } footer: {
+                        if healthDenied {
+                            Text("Access is turned off. You can allow it in the Health app: tap your profile picture, then Apps.")
+                        } else {
+                            Text("Each drink you add is also saved in the Health app.")
+                        }
+                    }
                 }
 
                 Section(
@@ -112,6 +128,7 @@ struct NotificationSettingsView: View {
                 }
             }
         }
+        .onAppear { healthDenied = HealthSync.isSharingDenied }
         .onChange(of: startHour) { _, newStart in
             // Keep the window valid if Start moves past End.
             if endHour < newStart { endHour = newStart }
@@ -123,6 +140,31 @@ struct NotificationSettingsView: View {
             Text("This will set today's filled amount back to 0 \(volumeUnit.label).")
         }
         .dynamicTypeSize(.large ... .accessibility1)
+    }
+
+    /// Turning it on asks for Health permission (iOS only shows the sheet the first time).
+    /// Turning it off stops saving; drinks already in Health stay there.
+    private var saveToHealthBinding: Binding<Bool> {
+        Binding(
+            get: { saveToHealth },
+            set: { isOn in
+                saveToHealth = isOn
+                guard isOn else {
+                    HealthSync.clearPending()
+                    return
+                }
+                Task {
+                    let allowed = await HealthSync.requestAuthorization()
+                    // Declined (now or earlier): switch back off; the footer says where to allow it.
+                    healthDenied = HealthSync.isSharingDenied
+                    if allowed {
+                        await HealthSync.savePending()
+                    } else {
+                        saveToHealth = false
+                    }
+                }
+            }
+        )
     }
 
     private var notificationsDeniedRow: some View {
