@@ -222,8 +222,8 @@ struct ContentView: View {
                 // Water may have been added from the widget while the app was in the background.
                 viewModel.reload()
                 viewModel.resetIfNeeded()
-                // The user has seen the app, so the reminder badge is no longer needed.
-                notificationScheduler.clearBadge()
+                // The user has seen the app, so earlier reminders and the badge are no longer needed.
+                notificationScheduler.clearDeliveredReminders()
                 // They may have changed notification permission in iOS Settings meanwhile.
                 Task { await refreshNotificationsDenied() }
                 // Retry any drinks the widget or an earlier attempt couldn't save to Health.

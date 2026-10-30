@@ -196,8 +196,8 @@ struct NotificationSchedulerTests {
         #expect(scheduled.allSatisfy { $0.content.categoryIdentifier == ReminderNotification.categoryID })
     }
 
-    @Test("clearBadge resets the badge but keeps scheduled reminders")
-    func clearBadgeKeepsReminders() throws {
+    @Test("clearDeliveredReminders removes delivered reminders and the badge but keeps scheduled ones")
+    func clearDeliveredKeepsScheduledReminders() throws {
         let nowDate = date("2000-01-01T06:00:00Z")
         let fakeCenter = FakeUserNotificationCenter()
         let scheduler = makeScheduler(center: fakeCenter, now: nowDate)
@@ -206,10 +206,24 @@ struct NotificationSchedulerTests {
         let countBefore = try #require(fakeCenter.requests).count
         let badgeResetsBefore = fakeCenter.badgeResetCount
 
-        scheduler.clearBadge()
+        scheduler.clearDeliveredReminders()
 
+        #expect(fakeCenter.deliveredRemovalCount == 1)
         #expect(fakeCenter.badgeResetCount == badgeResetsBefore + 1)
         #expect(fakeCenter.requests?.count == countBefore)
+    }
+
+    @Test("rescheduling leaves delivered reminders alone")
+    func reschedulingKeepsDeliveredReminders() {
+        let nowDate = date("2000-01-01T06:00:00Z")
+        let fakeCenter = FakeUserNotificationCenter()
+        let scheduler = makeScheduler(center: fakeCenter, now: nowDate)
+
+        scheduler.scheduleForTodayAndTomorrow(startHour: 7, endHour: 9, intervalMinutes: 60, soundFile: "sound", lastDrinkDate: nil)
+        scheduler.scheduleForTomorrow(startHour: 7, endHour: 9, intervalMinutes: 60, soundFile: "sound")
+        scheduler.cancelAll()
+
+        #expect(fakeCenter.deliveredRemovalCount == 0)
     }
 
     @Test("a start hour after the end hour schedules nothing instead of misbehaving")
@@ -280,6 +294,7 @@ private final class FakeUserNotificationCenter: UserNotificationCentering {
     private(set) var authorizationOptions: UNAuthorizationOptions?
     private(set) var removedPending = false
     private(set) var badgeResetCount = 0
+    private(set) var deliveredRemovalCount = 0
     private(set) var storedRequests: [UNNotificationRequest] = []
 
     var requests: [UNNotificationRequest]? { storedRequests.isEmpty ? nil : storedRequests }
@@ -296,6 +311,10 @@ private final class FakeUserNotificationCenter: UserNotificationCentering {
     func removeAllPendingNotificationRequests() {
         removedPending = true
         storedRequests.removeAll()
+    }
+
+    func removeAllDeliveredNotifications() {
+        deliveredRemovalCount += 1
     }
 
     func add(_ request: UNNotificationRequest) {

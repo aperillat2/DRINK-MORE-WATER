@@ -23,7 +23,8 @@ nonisolated struct AddWaterIntent: AppIntent {
 /// The "log a drink without opening the app" logic, shared by the widget/control button
 /// (`AddWaterIntent`) and the reminder notification's "Log a drink" action.
 nonisolated enum WaterLogger {
-    /// Adds one tap's worth of water to today's total, updates reminders, and refreshes widgets.
+    /// Adds one tap's worth of water to today's total, updates reminders, clears reminders
+    /// already showing, and refreshes widgets.
     /// At or past the goal there's nothing to add, so calling it again is a no-op.
     /// - Returns: true if water was added.
     @discardableResult
@@ -54,6 +55,9 @@ nonisolated enum WaterLogger {
                 waitUntilDone: true
             )
         }
+        // Earlier reminders still on the Lock Screen are now out of date. Clear them even at
+        // the goal (nothing added): tapping still means "I've seen it".
+        NotificationScheduler.shared.clearDeliveredReminders()
         // Interactive widget buttons reload their own widget automatically; this refreshes
         // the rest (e.g. Lock Screen widgets), and all of them when logged from a notification.
         WidgetCenter.shared.reloadAllTimelines()

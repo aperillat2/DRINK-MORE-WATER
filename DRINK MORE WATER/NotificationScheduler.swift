@@ -10,14 +10,16 @@ nonisolated protocol NotificationScheduling: Sendable {
     func scheduleForTodayAndTomorrow(startHour: Int, endHour: Int, intervalMinutes: Int, soundFile: String, lastDrinkDate: Date?)
     func scheduleForTomorrow(startHour: Int, endHour: Int, intervalMinutes: Int, soundFile: String)
     func cancelAll()
-    /// Clears the app icon badge without touching scheduled reminders.
-    func clearBadge()
+    /// Removes already-delivered reminders (Lock Screen, Notification Center) and clears the
+    /// app icon badge, without touching scheduled reminders.
+    func clearDeliveredReminders()
 }
 
 nonisolated protocol UserNotificationCentering {
     func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool
     func authorizationStatus() async -> UNAuthorizationStatus
     func removeAllPendingNotificationRequests()
+    func removeAllDeliveredNotifications()
     func add(_ request: UNNotificationRequest)
     func resetBadge()
 }
@@ -39,6 +41,10 @@ nonisolated struct DefaultUserNotificationCenter: UserNotificationCentering {
 
     func removeAllPendingNotificationRequests() {
         center.removeAllPendingNotificationRequests()
+    }
+
+    func removeAllDeliveredNotifications() {
+        center.removeAllDeliveredNotifications()
     }
 
     func add(_ request: UNNotificationRequest) {
@@ -299,8 +305,12 @@ nonisolated final class NotificationScheduler: NotificationScheduling, @unchecke
         center.resetBadge()
     }
 
-    func clearBadge() {
-        centerProvider().resetBadge()
+    /// Reminders are the only notifications this app sends, so removing everything
+    /// delivered can't take away anything else.
+    func clearDeliveredReminders() {
+        let center = centerProvider()
+        center.removeAllDeliveredNotifications()
+        center.resetBadge()
     }
 
     /// Schedules nothing for today; starts with tomorrow (used once today's goal is met).
