@@ -42,6 +42,12 @@ struct NotificationSettingsView: View {
                         .accessibilityIdentifier("volumeUnitPicker")
                     }
                     Toggle("Mute Add Water Sound", isOn: $muteTapSound)
+                    if let url = ReviewPrompter.writeReviewURL {
+                        Link(destination: url) {
+                            Label("Rate Drink More Water", systemImage: "star")
+                        }
+                        .accessibilityIdentifier("rateAppLink")
+                    }
                 }
 
                 if HealthSync.isAvailable {

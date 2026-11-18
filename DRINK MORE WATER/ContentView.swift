@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreGraphics
+import StoreKit
 import UserNotifications
 import WidgetKit
 
@@ -45,6 +46,16 @@ struct ContentView: View {
 
     private let sfx = SoundFX.shared
     @Environment(\.notificationScheduler) private var notificationScheduler
+    @Environment(\.requestReview) private var requestReview
+
+    /// Debug builds always show the rating prompt, which would block UI-test taps.
+    private var isUITesting: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-UITestsResetState")
+        #else
+        false
+        #endif
+    }
 
     private var goalMet: Bool {
         viewModel.dailyGoalOz > 0 && viewModel.intakeOz >= viewModel.dailyGoalOz
@@ -84,6 +95,13 @@ struct ContentView: View {
             Task {
                 try? await Task.sleep(for: .milliseconds(250))
                 haptics.success()
+            }
+            if !isUITesting && ReviewPrompter().goalMet() {
+                Task {
+                    // Let the goal-met celebration finish before asking.
+                    try? await Task.sleep(for: .seconds(2))
+                    requestReview()
+                }
             }
         }
         // Goal met: skips the rest of today. Otherwise: next reminder one interval from now.
