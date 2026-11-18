@@ -36,7 +36,7 @@ final class DRINK_MORE_WATERUITests: XCTestCase {
         }
 
         glass.tap()
-        XCTAssertTrue(intakeLabel.waitForLabel("80 of 80 ounces", timeout: 3), "Intake should stay capped at goal after extra tap")
+        XCTAssertTrue(intakeLabel.waitForLabel("90 of 80 ounces", timeout: 3), "A tap past the goal should still count")
     }
 
     @MainActor

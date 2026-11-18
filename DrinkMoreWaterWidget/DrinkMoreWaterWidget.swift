@@ -160,33 +160,16 @@ private struct ProgressLabel: View {
     }
 }
 
-/// Runs `AddWaterIntent` without opening the app. Shows a "Goal met" badge instead once full.
+/// Runs `AddWaterIntent` without opening the app. Stays available past the goal, since
+/// drinks after it still count (the glass shows "DAILY GOAL MET!").
 private struct AddWaterButton: View {
     let snapshot: WaterSnapshot
     /// Smaller, single-line version for the small widget.
     var compact = false
 
-    var body: some View {
-        if snapshot.isGoalMet {
-            // The badge takes exactly the button's space (via a hidden copy of the button),
-            // so the glass doesn't change size when the goal is reached.
-            // Left-aligned like the rest of the medium/large text; centered in the small widget.
-            ZStack(alignment: compact ? .center : .leading) {
-                addButton.hidden()
-                Label("Goal met!", systemImage: "checkmark.circle.fill")
-                    .font(font)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-        } else {
-            addButton
-        }
-    }
-
     private var font: Font { compact ? .subheadline.weight(.semibold) : .headline }
 
-    private var addButton: some View {
+    var body: some View {
         Button(intent: AddWaterIntent()) {
             Label("Add \(snapshot.perTap) \(snapshot.unit.label)", systemImage: "plus")
                 .font(font)
@@ -204,22 +187,17 @@ private struct AddWaterButton: View {
 // MARK: - Lock Screen sizes
 
 /// Lock Screen widgets are tappable on iPhone and iPad: the whole widget adds water,
-/// without unlocking (see `AddWaterIntent.authenticationPolicy`). Once the goal is met,
-/// there's nothing to add, so it's plain content instead of a button.
+/// without unlocking (see `AddWaterIntent.authenticationPolicy`), past the goal too.
 private struct LockScreenAddButton<Content: View>: View {
     let snapshot: WaterSnapshot
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        if snapshot.isGoalMet {
+        Button(intent: AddWaterIntent()) {
             content()
-        } else {
-            Button(intent: AddWaterIntent()) {
-                content()
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint("Adds \(snapshot.perTap) \(snapshot.unit.spokenName)")
         }
+        .buttonStyle(.plain)
+        .accessibilityHint("Adds \(snapshot.perTap) \(snapshot.unit.spokenName)")
     }
 }
 
@@ -332,14 +310,35 @@ struct WidgetGlassView: View {
             .frame(width: size.width, height: size.height, alignment: .topLeading)
     }
 
-    /// "DRINK MORE WATER", or the green "DAILY GOAL MET!" once the goal is met.
+    /// Today's total (e.g. "40 / OZ"), or the green "DAILY GOAL MET!" once the goal is met.
     @ViewBuilder
     private func words(transform: PhotoTransform, size: CGSize) -> some View {
         if snapshot.isGoalMet {
             GoalMetWords(transform: transform, size: size)
         } else {
-            DrinkMoreWaterWords(transform: transform, size: size, photoImageName: "widget_glass_words")
+            IntakeWords(snapshot: snapshot, transform: transform, size: size)
         }
+    }
+}
+
+/// Today's total written on the glass in place of "DRINK MORE WATER", in the same lettering.
+private struct IntakeWords: View {
+    let snapshot: WaterSnapshot
+    let transform: PhotoTransform
+    let size: CGSize
+
+    var body: some View {
+        GlassWordLines(
+            lines: [
+                Text(snapshot.intake, format: .number),
+                Text(snapshot.unit.label.localizedUppercase),
+            ],
+            color: .white,
+            transform: transform,
+            size: size,
+            // Centred on the glass itself: the photo's words sit slightly left of it.
+            centerX: GlassArt.centerX
+        )
     }
 }
 

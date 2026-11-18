@@ -23,19 +23,15 @@ nonisolated struct AddWaterIntent: AppIntent {
 /// The "log a drink without opening the app" logic, shared by the widget/control button
 /// (`AddWaterIntent`) and the reminder notification's "Log a drink" action.
 nonisolated enum WaterLogger {
-    /// Adds one tap's worth of water to today's total, updates reminders, clears reminders
-    /// already showing, and refreshes widgets.
-    /// At or past the goal there's nothing to add, so calling it again is a no-op.
-    /// - Returns: true if water was added.
-    @discardableResult
-    static func logOneTap() async -> Bool {
+    /// Adds one tap's worth of water to today's total (past the goal too), updates reminders,
+    /// clears reminders already showing, and refreshes widgets.
+    static func logOneTap() async {
         // The view model is main-actor isolated; callers here aren't, so hop explicitly.
         let update = await MainActor.run {
-            () -> (goalMet: Bool, lastDrink: Date?, added: Int, unit: VolumeUnit)? in
+            () -> (goalMet: Bool, lastDrink: Date?, added: Int, unit: VolumeUnit) in
             let model = WaterIntakeViewModel(defaults: SharedStore.defaults)
             model.resetIfNeeded()
-            guard let step = model.nextIntakeStep() else { return nil }
-            // Less than a full tap when the goal caps it.
+            let step = model.nextIntakeStep()
             let added = step.newValue - model.intakeOz
             model.intakeOz = step.newValue
             model.recordDrink()
@@ -43,24 +39,20 @@ nonisolated enum WaterLogger {
             return (model.isGoalMetToday, model.lastDrinkToday, added, model.unit)
         }
 
-        if let update {
-            await HealthSync.log(update.added, unit: update.unit, at: update.lastDrink ?? Date())
-            // Reminders: skip the rest of today once the goal is met; otherwise the next one
-            // comes one interval after this drink. Wait for it, since the process may be
-            // suspended right after this returns.
-            ReminderSettings.load().apply(
-                to: NotificationScheduler.shared,
-                goalMetToday: update.goalMet,
-                lastDrinkDate: update.lastDrink,
-                waitUntilDone: true
-            )
-        }
-        // Earlier reminders still on the Lock Screen are now out of date. Clear them even at
-        // the goal (nothing added): tapping still means "I've seen it".
+        await HealthSync.log(update.added, unit: update.unit, at: update.lastDrink ?? Date())
+        // Reminders: skip the rest of today once the goal is met; otherwise the next one
+        // comes one interval after this drink. Wait for it, since the process may be
+        // suspended right after this returns.
+        ReminderSettings.load().apply(
+            to: NotificationScheduler.shared,
+            goalMetToday: update.goalMet,
+            lastDrinkDate: update.lastDrink,
+            waitUntilDone: true
+        )
+        // Earlier reminders still on the Lock Screen are now out of date.
         NotificationScheduler.shared.clearDeliveredReminders()
         // Interactive widget buttons reload their own widget automatically; this refreshes
         // the rest (e.g. Lock Screen widgets), and all of them when logged from a notification.
         WidgetCenter.shared.reloadAllTimelines()
-        return update != nil
     }
 }

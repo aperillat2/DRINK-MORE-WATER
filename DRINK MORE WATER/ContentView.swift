@@ -77,11 +77,11 @@ struct ContentView: View {
 
     private func handleTap() {
         viewModel.resetIfNeeded()
-        guard let step = viewModel.nextIntakeStep() else { return }
+        let step = viewModel.nextIntakeStep()
+        // Past the goal the level stays at the rim, but the surface still ripples.
         surfacePulseStart = Date.timeIntervalSinceReferenceDate
         haptics.impactLight()
         if !muteTapSound { sfx.playSplash() }
-        // Less than a full tap when the goal caps it.
         let added = step.newValue - viewModel.intakeOz
         viewModel.intakeOz = step.newValue
         viewModel.recordDrink()
@@ -382,8 +382,7 @@ private extension ContentView {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Water glass")
             .accessibilityValue("\(viewModel.intakeOz) of \(viewModel.dailyGoalOz) \(viewModel.unit.spokenName)")
-            // Once full, tapping adds nothing, so say so instead of "Adds …".
-            .accessibilityHint(goalMet ? Text("Goal met!") : Text("Adds \(viewModel.ozPerTap) \(viewModel.unit.spokenName)"))
+            .accessibilityHint(Text("Adds \(viewModel.ozPerTap) \(viewModel.unit.spokenName)"))
             .accessibilityAddTraits(.isButton)
             .accessibilityAction(.default, handleTap)
             .accessibilityIdentifier("waterGlass")

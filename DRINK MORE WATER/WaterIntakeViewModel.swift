@@ -159,20 +159,27 @@ final class WaterIntakeViewModel {
             range: newUnit.perTapRange
         )
         let convertedIntake = Int(newUnit.convert(intakeOz, from: oldUnit).rounded())
+        let wasExactlyAtGoal = intakeOz == dailyGoalOz
 
         unit = newUnit
         dailyGoalOz = newGoal
         ozPerTap = newPerTap
-        // Rounding must not flip the goal state in either direction.
-        intakeOz = wasAtGoal ? newGoal : min(convertedIntake, newGoal - 1)
+        // Rounding must not flip the goal state in either direction. Exactly at the goal stays
+        // exactly at it (so switching back and forth doesn't creep); drinks past it are kept.
+        if wasExactlyAtGoal {
+            intakeOz = newGoal
+        } else if wasAtGoal {
+            intakeOz = max(convertedIntake, newGoal)
+        } else {
+            intakeOz = min(convertedIntake, newGoal - 1)
+        }
     }
 
-    /// Returns the next intake value and whether this step reaches the goal.
-    /// Returns nil if already at or above the goal.
-    func nextIntakeStep() -> (newValue: Int, reachedGoal: Bool)? {
-        guard intakeOz < dailyGoalOz else { return nil }
-        let newValue = min(intakeOz + ozPerTap, dailyGoalOz)
-        let reached = newValue >= dailyGoalOz
+    /// Returns the next intake value (one full tap; drinks past the goal still count) and
+    /// whether this step is the one that reaches the goal.
+    func nextIntakeStep() -> (newValue: Int, reachedGoal: Bool) {
+        let newValue = intakeOz + ozPerTap
+        let reached = intakeOz < dailyGoalOz && newValue >= dailyGoalOz
         return (newValue, reached)
     }
 }

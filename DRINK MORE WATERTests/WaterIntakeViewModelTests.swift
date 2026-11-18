@@ -95,24 +95,36 @@ struct WaterIntakeViewModelTests {
     }
 
     @Test("nextIntakeStep increments and can reach goal")
-    func nextIntakeStepReachesGoal() throws {
+    func nextIntakeStepReachesGoal() {
         let store = IsolatedDefaults(intake: 0, date: "2000-01-01", goal: 100)
 
         let vm = WaterIntakeViewModel(defaults: store.defaults)
         vm.dailyGoalOz = 20
         vm.intakeOz = 10
 
-        let step = try #require(vm.nextIntakeStep())
+        let step = vm.nextIntakeStep()
         #expect(step.newValue == 20)
         #expect(step.reachedGoal == true)
     }
 
-    @Test("nextIntakeStep returns nil once the goal is reached")
-    func nextIntakeStepNilAtGoal() {
+    @Test("the tap that crosses the goal adds a full tap, not just what's left")
+    func nextIntakeStepCrossingGoalIsFullTap() {
+        let store = IsolatedDefaults(intake: 75, date: DateUtils.todayString(), goal: 80)
+
+        let vm = WaterIntakeViewModel(defaults: store.defaults)
+        let step = vm.nextIntakeStep()
+        #expect(step.newValue == 85)
+        #expect(step.reachedGoal == true)
+    }
+
+    @Test("taps past the goal still add water, without reaching the goal again")
+    func nextIntakeStepPastGoal() {
         let store = IsolatedDefaults(intake: 80, date: DateUtils.todayString(), goal: 80)
 
         let vm = WaterIntakeViewModel(defaults: store.defaults)
-        #expect(vm.nextIntakeStep() == nil)
+        let step = vm.nextIntakeStep()
+        #expect(step.newValue == 90)
+        #expect(step.reachedGoal == false)
     }
 
     @Test("resetIfNeeded resets when the clock passes midnight")
@@ -180,14 +192,14 @@ struct WaterIntakeViewModelTests {
         #expect(vm.syncGoalMetState() == true)
         #expect(vm.isGoalMetToday)
         #expect(vm.intakeOz == 60, "Intake isn't lost when the goal is lowered")
-        #expect(vm.nextIntakeStep() == nil)
+        #expect(vm.nextIntakeStep().reachedGoal == false, "Already met, so the next tap doesn't celebrate again")
 
         // Calling again without a change reports nothing new.
         #expect(vm.syncGoalMetState() == false)
     }
 
     @Test("Raising the goal above today's intake un-meets it")
-    func raisingGoalUnmeetsIt() throws {
+    func raisingGoalUnmeetsIt() {
         let clock = TestClock(date("2000-01-01T12:00:00Z"))
         let store = IsolatedDefaults(intake: 80, date: "2000-01-01", goal: 80)
         let vm = makeViewModel(store, clock: clock)
@@ -196,8 +208,9 @@ struct WaterIntakeViewModelTests {
         vm.dailyGoalOz = 100
         #expect(vm.syncGoalMetState() == true)
         #expect(vm.isGoalMetToday == false)
-        let step = try #require(vm.nextIntakeStep(), "Tapping works again")
+        let step = vm.nextIntakeStep()
         #expect(step.newValue == 90)
+        #expect(step.reachedGoal == false, "Not reached the raised goal yet")
     }
 
     @Test("setUnit converts amounts between oz and ml")
@@ -223,6 +236,16 @@ struct WaterIntakeViewModelTests {
         // The chosen unit survives a relaunch.
         vm.setUnit(.ml)
         #expect(WaterIntakeViewModel(defaults: store.defaults).unit == .ml)
+    }
+
+    @Test("setUnit keeps drinks logged past the goal")
+    func setUnitKeepsIntakePastGoal() {
+        let store = IsolatedDefaults(intake: 100, date: DateUtils.todayString(), goal: 80)
+        let vm = WaterIntakeViewModel(defaults: store.defaults)
+
+        vm.setUnit(.ml)
+        #expect(vm.dailyGoalOz == 2400)
+        #expect(vm.intakeOz == 2957)
     }
 
     @Test("setUnit never turns an unfinished day into a met goal by rounding")
