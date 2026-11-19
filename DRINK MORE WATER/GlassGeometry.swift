@@ -273,9 +273,9 @@ struct DrinkMoreWaterWords: View {
             // Each word is one line on the glass, so translations should stay short.
             GlassWordLines(
                 lines: [
-                    Text(LocalizedStringResource("DRINK", comment: "Line 1 of 3 written on the water glass (\"DRINK MORE WATER\"). The three lines are read together as one phrase; reorder words between lines as needed. Keep each line very short.")),
-                    Text(LocalizedStringResource("MORE", comment: "Line 2 of 3 written on the water glass (\"DRINK MORE WATER\"). The three lines are read together as one phrase; reorder words between lines as needed. Keep each line very short.")),
-                    Text(LocalizedStringResource("WATER", comment: "Line 3 of 3 written on the water glass (\"DRINK MORE WATER\"). The three lines are read together as one phrase; reorder words between lines as needed. Keep each line very short.")),
+                    LocalizedStringResource("DRINK", comment: "Line 1 of 3 written on the water glass (\"DRINK MORE WATER\"). The three lines are read together as one phrase; reorder words between lines as needed. Keep each line very short."),
+                    LocalizedStringResource("MORE", comment: "Line 2 of 3 written on the water glass (\"DRINK MORE WATER\"). The three lines are read together as one phrase; reorder words between lines as needed. Keep each line very short."),
+                    LocalizedStringResource("WATER", comment: "Line 3 of 3 written on the water glass (\"DRINK MORE WATER\"). The three lines are read together as one phrase; reorder words between lines as needed. Keep each line very short."),
                 ],
                 color: .white,
                 transform: transform,
@@ -297,9 +297,9 @@ struct GoalMetWords: View {
         // Each word is one line on the glass, so translations should stay short.
         GlassWordLines(
             lines: [
-                Text(LocalizedStringResource("DAILY", comment: "Goal met, line 1 of 3 on the glass (\"DAILY GOAL MET!\")")),
-                Text(LocalizedStringResource("GOAL", comment: "Goal met, line 2 of 3 on the glass")),
-                Text(LocalizedStringResource("MET!", comment: "Goal met, line 3 of 3 on the glass")),
+                LocalizedStringResource("DAILY", comment: "Goal met, line 1 of 3 on the glass (\"DAILY GOAL MET!\")"),
+                LocalizedStringResource("GOAL", comment: "Goal met, line 2 of 3 on the glass"),
+                LocalizedStringResource("MET!", comment: "Goal met, line 3 of 3 on the glass"),
             ],
             color: Self.goalGreen,
             transform: transform,
@@ -308,16 +308,13 @@ struct GoalMetWords: View {
     }
 }
 
-/// Lines of text laid out like the photo's three words: same line spacing and cap height,
-/// in a condensed bold face close to the photo's lettering. Fewer than three lines are
-/// centred on the same block.
+/// Three lines of text laid out like the photo's words: same line positions and cap height,
+/// in a condensed bold face close to the photo's lettering.
 struct GlassWordLines: View {
-    let lines: [Text]
+    let lines: [LocalizedStringResource]
     let color: Color
     let transform: PhotoTransform
     let size: CGSize
-    /// Photo x the lines are centred on. Defaults to where the photo's own words sit.
-    var centerX: CGFloat = GlassArt.wordsCenterX
 
     /// The widest a line may be (photo pixels) before it shrinks to stay inside the glass walls.
     private static let maxLineWidth: CGFloat = 420
@@ -334,8 +331,8 @@ struct GlassWordLines: View {
         let fontSize = GlassArt.wordCapHeight / 0.705 * Self.fontScale * transform.scale
         ZStack(alignment: .topLeading) {
             ForEach(lines.indices, id: \.self) { index in
-                let center = transform.point(CGPoint(x: centerX, y: Self.lineCenterY(index, of: lines.count)))
-                lines[index]
+                let center = transform.point(CGPoint(x: GlassArt.wordsCenterX, y: GlassArt.wordLineCenters[index]))
+                Text(lines[index])
                     .font(.system(size: fontSize, weight: .bold).width(.condensed))
                     .foregroundStyle(color)
                     .lineLimit(1)
@@ -346,16 +343,5 @@ struct GlassWordLines: View {
         }
         .frame(width: size.width, height: size.height, alignment: .topLeading)
         .dynamicTypeSize(.large) // part of the artwork, so it doesn't follow text-size settings
-    }
-
-    /// Photo y of line `index` when there are `count` lines: the photo's three line positions,
-    /// shifted so a shorter block stays centred on the middle one.
-    private static func lineCenterY(_ index: Int, of count: Int) -> CGFloat {
-        let centers = GlassArt.wordLineCenters
-        let position = CGFloat(index) + CGFloat(centers.count - count) / 2
-        let lower = min(max(Int(position.rounded(.down)), 0), centers.count - 1)
-        let upper = min(lower + 1, centers.count - 1)
-        let t = position - CGFloat(lower)
-        return centers[lower] + (centers[upper] - centers[lower]) * t
     }
 }

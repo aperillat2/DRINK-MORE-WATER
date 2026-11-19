@@ -321,24 +321,36 @@ struct WidgetGlassView: View {
     }
 }
 
-/// Today's total written on the glass in place of "DRINK MORE WATER", in the same lettering.
+/// Today's total written on the glass in place of "DRINK MORE WATER": a large number with
+/// the unit underneath, in the same lettering as the photo's words.
 private struct IntakeWords: View {
     let snapshot: WaterSnapshot
     let transform: PhotoTransform
     let size: CGSize
 
+    /// How much taller the number is than the photo's words. The unit stays their size.
+    private static let numberScale: CGFloat = 1.8
+    /// Widest the text may be (photo pixels) before it shrinks to stay inside the glass walls.
+    private static let maxWidth: CGFloat = 420
+
     var body: some View {
-        GlassWordLines(
-            lines: [
-                Text(snapshot.intake, format: .number),
-                Text(snapshot.unit.label.localizedUppercase),
-            ],
-            color: .white,
-            transform: transform,
-            size: size,
-            // Centred on the glass itself: the photo's words sit slightly left of it.
-            centerX: GlassArt.centerX
-        )
+        // SF's cap height is about 0.705 of the point size.
+        let wordSize = GlassArt.wordCapHeight / 0.705 * transform.scale
+        VStack(spacing: -0.3 * wordSize) {
+            Text(snapshot.intake, format: .number)
+                .font(.system(size: wordSize * Self.numberScale, weight: .bold).width(.condensed))
+            Text(snapshot.unit.label.localizedUppercase)
+                .font(.system(size: wordSize, weight: .bold).width(.condensed))
+        }
+        .foregroundStyle(.white)
+        .lineLimit(1)
+        .minimumScaleFactor(0.4)
+        .frame(width: Self.maxWidth * transform.scale)
+        // Centred on the glass itself (the photo's words sit slightly left of it), at the
+        // height of the photo's middle word.
+        .position(transform.point(CGPoint(x: GlassArt.centerX, y: GlassArt.wordLineCenters[1])))
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .dynamicTypeSize(.large) // part of the artwork, so it doesn't follow text-size settings
     }
 }
 
